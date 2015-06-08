@@ -3,7 +3,7 @@ Bitfoot
 
 UCI Chess engine by Shawn Chidester <zd3nik@gmail.com>
 
-This [Clubfoot](https://github.com/zd3nik/Clubfoot) with bitboards.  I intend to keep this engine and Clubfoot as similar as possible in terms of search mechanics.  Only board representaion, move generation, and positional analsys should be different.  The use of bitboards makes Bitfoot much faster than Clubfoot.  It also makes positional evaluation easier/faster.  With Bitfoot being faster and more positionally aware than Clubfoot, Bitfoot is the stronger engine.
+This is [Clubfoot](https://github.com/zd3nik/Clubfoot) with bitboards.  I intend to keep this engine and Clubfoot as similar as possible in terms of search mechanics.  Only board representaion, move generation, and positional analsys should be different.  The use of bitboards makes Bitfoot much faster than Clubfoot.  It also makes positional evaluation easier/faster.  With Bitfoot being faster and more positionally aware than Clubfoot, Bitfoot is the stronger engine.
 
 I also show a simpler way of using my [Senjo UCI Adapter](https://github.com/zd3nik/SenjoUCIAdapter) in this engine.  In Clubfoot the Senjo UCI Adapter is included as a git sub-module.  In this engine I simply include the Senjo source code in the Bitfoot project.  This makes cloning the Bitfoot project easier.  It also means I can make Bitfoot-specific customizations to the UCIAdapter code if I want without needing to push those changes back to the Senjo project.
 

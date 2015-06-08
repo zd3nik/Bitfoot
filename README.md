@@ -11,7 +11,7 @@ I also show a simpler way of using my [Senjo UCI Adapter](https://github.com/zd3
 Intent
 -----
 
-As with most of my projects I start out with one goal and end up with a different goal once I get the project fleshed out a bit.  This project started as a revamp of an older chess engine I wrote named Hiroki.  But I started by cloning Clubfoot and replacing the board representaion, move generation, and positional evaluation with Hiroki code.  Only I ended up doing the move generation differently than I did in Hiroki.  What made Hiroki unique was its move generator.  With that part lost this "revamped" version of Hiroki ceased to be Hirko and because simply Clubfoot with bitboards.  So that's what it is and that's how it shall stay.
+As with most of my projects I start out with one goal and end up with a different goal once I get the project fleshed out a bit.  This project started as a revamp of an older chess engine I wrote named Hiroki.  But I started by cloning Clubfoot and replacing the board representaion, move generation, and positional evaluation with Hiroki code.  Only I ended up doing the move generation differently than I did in Hiroki.  What made Hiroki unique was its move generator.  With that part lost this "revamped" version of Hiroki ceased to be Hirko and became simply Clubfoot with bitboards.  So that's what it is and that's how it shall stay.
 
 
 A/B Bitboards

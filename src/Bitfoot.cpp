@@ -746,7 +746,13 @@ std::string Bitfoot::GetEngineVersion() const
 //----------------------------------------------------------------------------
 std::string Bitfoot::GetAuthorName() const
 {
-  return "Shawn Chidester <zd3nik@gmail.com>";
+  return "Shawn Chidester";
+}
+
+//----------------------------------------------------------------------------
+std::string Bitfoot::GetCountryName() const
+{
+  return "USA";
 }
 
 //----------------------------------------------------------------------------

@@ -1,21 +1,19 @@
 Bitfoot
-======
+=======
 
 UCI Chess engine by Shawn Chidester <zd3nik@gmail.com>
 
-This is [Clubfoot](https://github.com/zd3nik/Clubfoot) with bitboards.  I intend to keep this engine and Clubfoot as similar as possible in terms of search mechanics.  Only board representaion, move generation, and positional analsys should be different.  The use of bitboards makes Bitfoot much faster than Clubfoot.  It also makes positional evaluation easier/faster.  With Bitfoot being faster and more positionally aware than Clubfoot, Bitfoot is the stronger engine.
+This is [Clubfoot](https://github.com/zd3nik/Clubfoot) with bitboards.  I intend to keep this engine and Clubfoot as similar as possible in terms of search mechanics.  Only board representation, move generation, and positional analysis should be different.  The use of bitboards makes Bitfoot much faster than Clubfoot.  It also makes positional evaluation easier/faster.  With Bitfoot being faster and more positionally aware than Clubfoot, Bitfoot is the stronger engine.
 
 I also show a simpler way of using my [Senjo UCI Adapter](https://github.com/zd3nik/SenjoUCIAdapter) in this engine.  In Clubfoot the Senjo UCI Adapter is included as a git sub-module.  In this engine I simply include the Senjo source code in the Bitfoot project.  This makes cloning the Bitfoot project easier.  It also means I can make Bitfoot-specific customizations to the UCIAdapter code if I want without needing to push those changes back to the Senjo project.
 
+How it came to be
+-----------------
 
-Intent
------
-
-As with most of my projects I start out with one goal and end up with a different goal once I get the project fleshed out a bit.  This project started as a revamp of an older chess engine I wrote named Hiroki.  But I started by cloning Clubfoot and replacing the board representaion, move generation, and positional evaluation with Hiroki code.  Only I ended up doing the move generation differently than I did in Hiroki.  What made Hiroki unique was its move generator.  With that part lost this "revamped" version of Hiroki ceased to be Hirko and became simply Clubfoot with bitboards.  So that's what it is and that's how it shall stay.
-
+This project was originally indented as a revamp of an older chess engine I wrote named `Hiroki`.  I started by cloning Clubfoot and replacing the board representation, move generation, and positional evaluation with Hiroki code.  Except I didn't copy the move generation code as-is, I simplified it so much it's really no longer the same move generator.  What made Hiroki unique was its move generator.  With that part missing this "revamped" version of Hiroki ceased to be Hiroki and became simply Clubfoot with bitboards.
 
 A/B Bitboards
-------------
+-------------
 
 Above/Below Bitboards.
 
@@ -105,3 +103,26 @@ The "BELOW" macro:
 
     #define BELOW(x) ((x) - 1)
 
+Binary Downloads
+----------------
+
+I will periodically make binary builds of this engine available.  Please do not ask for binaries for platforms other than those provided as I do not have the resources to build binaries for other platforms.
+
+**NOTICE**: *On Microsoft Windows platforms if you get errors about missing dlls when running the Clubfoot executable you must download and install the [Microsoft Visual C++ Redistributable Package](http://www.microsoft.com/en-us/download/details.aspx?id=40784).*
+
+* On the Microsoft Visual C++ Redistributable Package page (link provided above) click the `Download` button and choose `vcredist_x86.exe` for 32-bit, choose `vcredist_x64.exe` for 64-bit.  Install the package and try Clubfoot again.
+
+**NOTICE**: *Binaries are provided under the terms described below.  Use them at your own risk.  I welcome feedback on the performance of Clubfoot but I provide no warranty, no promises that it will work on your computer, and no form of technical support.*
+
+Copyright and Disclaimer
+------------------------
+
+Copyright (c) 2015 Shawn Chidester <zd3nik@gmail.com>
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

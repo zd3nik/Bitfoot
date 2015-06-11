@@ -730,7 +730,7 @@ EngineOption Bitfoot::_optTest("Experimental Feature", "0", EngineOption::Spin, 
 //----------------------------------------------------------------------------
 std::string Bitfoot::GetEngineName() const
 {
-  return "Bitfoot";
+  return (sizeof(void*) == 8) ? "Bitfoot" : "Bitfoot (32-bit)";
 }
 
 //----------------------------------------------------------------------------

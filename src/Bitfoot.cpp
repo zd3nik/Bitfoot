@@ -1294,7 +1294,7 @@ void Bitfoot::PrintBitmap(const uint64_t map)
         out << " X";
       }
       else {
-        out << " O";
+        out << " -";
       }
     }
     out << '\n';

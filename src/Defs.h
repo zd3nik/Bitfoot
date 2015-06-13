@@ -179,7 +179,9 @@ enum StateMask {
   CastleMask      = (WhiteCastleMask|BlackCastleMask),
   StateMask       = (ColorMask|CastleMask),
   Draw            = 0x020,
-  Check           = 0x040
+  Check           = 0x040,
+  WhiteThreat     = 0x080,
+  BlackThreat     = 0x100
 };
 
 //----------------------------------------------------------------------------

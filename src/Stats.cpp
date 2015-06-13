@@ -17,8 +17,9 @@ void Stats::Clear()
   snodes        = 0;
   qnodes        = 0;
   chkExts       = 0;
-  hashExts      = 0;
+  threatExts    = 0;
   oneReplyExts  = 0;
+  hashExts      = 0;
   execs         = 0;
   qexecs        = 0;
   deltaCount    = 0;
@@ -43,8 +44,9 @@ Stats& Stats::operator+=(const Stats& other) {
   snodes        += other.snodes;
   qnodes        += other.qnodes;
   chkExts       += other.chkExts;
-  hashExts      += other.hashExts;
+  threatExts    += other.threatExts;
   oneReplyExts  += other.oneReplyExts;
+  hashExts      += other.hashExts;
   execs         += other.execs;
   qexecs        += other.qexecs;
   deltaCount    += other.deltaCount;
@@ -78,8 +80,9 @@ Stats Stats::Average() const {
   avg.snodes        = Avg(snodes,       statCount);
   avg.qnodes        = Avg(qnodes,       statCount);
   avg.chkExts       = Avg(chkExts,      statCount);
-  avg.hashExts      = Avg(hashExts,     statCount);
+  avg.threatExts    = Avg(threatExts,   statCount);
   avg.oneReplyExts  = Avg(oneReplyExts, statCount);
+  avg.hashExts      = Avg(hashExts,     statCount);
   avg.execs         = Avg(execs,        statCount);
   avg.qexecs        = Avg(qexecs,       statCount);
   avg.deltaCount    = Avg(deltaCount,   statCount);
@@ -101,8 +104,9 @@ Stats Stats::Average() const {
 
 //----------------------------------------------------------------------------
 void Stats::Print() {
-  if (chkExts || oneReplyExts || hashExts) {
+  if (chkExts || threatExts || oneReplyExts || hashExts) {
     Output() << chkExts << " check extensions, "
+             << threatExts << " threat extensions, "
              << oneReplyExts << " one reply extensions, "
              << hashExts << " hashed extensions";
   }

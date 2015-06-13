@@ -225,7 +225,7 @@ private:
 
   //--------------------------------------------------------------------------
   inline float RemainingMaterial(const Color color) const {
-    return (static_cast<float>(material[!color]) / StartMaterial);
+    return (static_cast<float>(material[color]) / StartMaterial);
   }
 
   //--------------------------------------------------------------------------
@@ -1353,26 +1353,117 @@ private:
   inline int KingEval() {
     const int sqr = king[color];
     assert(_board[sqr] == (color|King));
+    assert(!atks[color|King]);
 
     int score = 0;
+    int chksqr;
     uint64_t p;
+    uint64_t w;
+    uint64_t z;
 
     // apply king piece/square value here instead of Exec()
-    const float ratio = RemainingMaterial(color);
+    const float ratio = RemainingMaterial(!color);
     const float midgame = (ratio * _PIECE_SQR[0][sqr]);
-    const float endgame = ((1 - ratio) * _PIECE_SQR[1][sqr]);
+    const float endgame = ((1.0 - ratio) * _PIECE_SQR[1][sqr]);
     score += static_cast<int>(midgame + endgame);
 
-    // zero mobility is always bad if we can't castle
-    if (!(state & (color ? BlackCastleMask : WhiteCastleMask)) &&
-        !(_KING_ATK[sqr] &
-          ~(pc[color] | atks[!color] | _KING_ATK[king[!color]])))
-    {
+    // zero mobility is always bad
+    p = (_KING_ATK[sqr] & ~(pc[color] | atks[!color] | _KING_ATK[king[!color]]));
+    if (!p) {
       score -= 20;
+      if (_test && (_KNIGHT_ATK[sqr] & atks[(!color)|Knight] & ~atks[color])) {
+        score -= 20;
+        state |= (color ? WhiteThreat : BlackThreat);
+      }
+    }
+    else if (_test) {
+      // is there a potential mate threat?
+      // NOTE: this routine is imperfect in many ways, but it should catch
+      // a large bulk of real mate threats, such as back rank mates
+      w = (~atks[color] &
+           ((kcross[color] & (atks[(!color)|Rook] | atks[(!color)|Queen])) |
+            (kdiags[color] & (atks[(!color)|Bishop] | atks[(!color)|Queen]))));
+      while (w) {
+        PopLowSquare(w, chksqr);
+        z = _ALL;
+        switch (_diff.Dir(sqr, chksqr)) {
+        case SouthWest:
+          if (p == (p & _NORTH_EAST[chksqr])) {
+            z = (_SOUTH_WEST[sqr] & kdiags[color] & atks[color]);
+          }
+          break;
+        case South:
+          if (p == (p & _NORTH[chksqr])) {
+            z = (_SOUTH[sqr] & kcross[color] & atks[color]);
+          }
+          break;
+        case SouthEast:
+          if (p == (p & _NORTH_WEST[chksqr])) {
+            z = (_SOUTH_EAST[sqr] & kdiags[color] & atks[color]);
+          }
+          break;
+        case West:
+          if (p == (p & _EAST[chksqr])) {
+            z = (_WEST[sqr] & kcross[color] & atks[color]);
+          }
+          break;
+        case East:
+          if (p == (p & _WEST[chksqr])) {
+            z = (_EAST[sqr] & kcross[color] & atks[color]);
+          }
+          break;
+        case NorthWest:
+          if (p == (p & _SOUTH_EAST[chksqr])) {
+            z = (_NORTH_WEST[sqr] & kdiags[color] & atks[color]);
+          }
+          break;
+        case North:
+          if (p == (p & _SOUTH[chksqr])) {
+            z = (_NORTH[sqr] & kcross[color] & atks[color]);
+          }
+          break;
+        case NorthEast:
+          if (p == (p & _SOUTH_WEST[chksqr])) {
+            z = (_NORTH_EAST[sqr] & kdiags[color] & atks[color]);
+          }
+          break;
+        default:
+          assert(false);
+        }
+        if (!z) {
+          if ((z = (_KING_ATK[sqr] & BIT(chksqr) &
+                    ~(atks[(!color)|Pawn] | atks[(!color)|Knight] |
+                      _KING_ATK[king[!color]]))))
+          {
+            if ((!!atks[(!color)|Bishop] +
+                 !!atks[(!color)|Rook] +
+                 !!atks[(!color)|Queen]) >= 2)
+            {
+              z = 0;
+            }
+            // TODO handle xray defenders
+          }
+          if (!z) {
+            score -= 20;
+            state |= (color ? WhiteThreat : BlackThreat);
+          }
+        }
+      }
+      if ((w = (_KNIGHT_ATK[sqr] & atks[(!color)|Knight] & ~atks[color]))) {
+        while (w) {
+          PopLowSquare(w, chksqr);
+          if ((p & _KNIGHT_ATK[chksqr]) == p) {
+            score -= 20;
+            state |= (color ? WhiteThreat : BlackThreat);
+            break;
+          }
+        }
+      }
     }
 
     // penalty for being in front of own pawns
     if (BIT(sqr) & pinfo[color].front) {
+      assert(pc[color|Pawn] & (color ? _NORTH[sqr] : _SOUTH[sqr]));
       score -= static_cast<int>(10 + (40 * ratio));
     }
 
@@ -1709,10 +1800,18 @@ private:
     if (pc[WhiteQueen])  eval += QueenEval<White>();
     if (pc[BlackQueen])  eval -= QueenEval<Black>();
 
+    // fill in attack bitmaps sans king attacks
+    atks[White] = (atks[WhitePawn] | atks[WhiteKnight] | atks[WhiteBishop] |
+                   atks[WhiteRook] | atks[WhiteQueen]);
+    atks[Black] = (atks[BlackPawn] | atks[BlackKnight] | atks[BlackBishop] |
+                   atks[BlackRook] | atks[BlackQueen]);
+
     eval += KingEval<White>();
     eval -= KingEval<Black>();
 
     // finish populating attack bitmaps
+    atks[WhiteKing] = _KING_ATK[king[White]];
+    atks[BlackKing] = _KING_ATK[king[Black]];
     atks[White] = (atks[WhitePawn] | atks[WhiteKnight] | atks[WhiteBishop] |
                    atks[WhiteRook] | atks[WhiteQueen]  | atks[WhiteKing]);
     atks[Black] = (atks[BlackPawn] | atks[BlackKnight] | atks[BlackBishop] |
@@ -3953,6 +4052,16 @@ private:
           depth++;
         }
       }
+    }
+
+    // extend depth if we are facing a new threat
+    if ((_test > 1) && !extended && !parent->extended &&
+        (state & (color ? WhiteThreat : BlackThreat)) &&
+        !(parent->state & (color ? WhiteThreat : BlackThreat)))
+    {
+      _stats.threatExts++;
+      extended++;
+      depth++;
     }
 
     // do we have anything for this position in the transposition table?

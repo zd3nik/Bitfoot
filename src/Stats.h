@@ -22,8 +22,9 @@ struct Stats
   uint64_t snodes;        // Search() calls
   uint64_t qnodes;        // QSearch() calls
   uint64_t chkExts;       // check extensions
-  uint64_t hashExts;      // extensions from hash
+  uint64_t threatExts;    // threat extensions
   uint64_t oneReplyExts;  // one reply extensions
+  uint64_t hashExts;      // extensions from hash
   uint64_t execs;         // Exec() calls
   uint64_t qexecs;        // delta candidates
   uint64_t deltaCount;    // delta prunings

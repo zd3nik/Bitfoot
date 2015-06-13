@@ -112,7 +112,7 @@ I will periodically make binary builds of this engine available.  Please do not 
 
 * On the Microsoft Visual C++ Redistributable Package page (link provided above) click the `Download` button and choose `vcredist_x86.exe` for 32-bit, choose `vcredist_x64.exe` for 64-bit.  Install the package and try Clubfoot again.
 
-**NOTICE**: *Binaries are provided under the terms described below.  Use them at your own risk.  I welcome feedback on the performance of Clubfoot but I provide no warranty, no promises that it will work on your computer, and no form of technical support.*
+**NOTICE**: *Binaries are provided under the terms described below.  Use them at your own risk.  I welcome feedback on the performance of Bitfoot but I provide no warranty, no promises that it will work on your computer, and no form of technical support.*
 
 Copyright and Disclaimer
 ------------------------

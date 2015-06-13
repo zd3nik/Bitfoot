@@ -117,8 +117,6 @@ I will periodically make binary builds of this engine available.  Please do not 
 
 **NOTICE**: *On Microsoft Windows platforms if you get errors about missing dlls when running the Clubfoot executable you must download and install the [Microsoft Visual C++ Redistributable Package](http://www.microsoft.com/en-us/download/details.aspx?id=40784).*
 
-* On the Microsoft Visual C++ Redistributable Package page (link provided above) click the `Download` button and choose `vcredist_x86.exe` for 32-bit, choose `vcredist_x64.exe` for 64-bit.  Install the package and try Clubfoot again.
-
 **NOTICE**: *Binaries are provided under the terms described below.  Use them at your own risk.  I welcome feedback on the performance of Bitfoot but I provide no warranty, no promises that it will work on your computer, and no form of technical support.*
 
 Copyright and Disclaimer

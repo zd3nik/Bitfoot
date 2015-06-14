@@ -2731,8 +2731,9 @@ private:
   inline void AddMove(const int piece,
                       const int from,
                       const int to,
-                      const int cap = 0,
-                      const int promo = 0)
+                      const int score,
+                      const int cap,
+                      const int promo)
   {
     assert((moveCount + 1) < MaxMoves);
     assert(IS_MOVE_TYPE(type));
@@ -2741,58 +2742,18 @@ private:
     assert(IS_PIECE(piece));
     assert(COLOR_OF(piece) == color);
     assert(_board[from] == piece);
+    assert(abs(score) < Infinity);
     assert(!cap || ((cap >= Pawn) && (cap < King)));
     assert(!cap || (COLOR_OF(cap) != color));
     assert(!promo || ((promo >= Knight) && (promo < King)));
     assert(!promo || (COLOR_OF(promo) == color));
 
-    int score = (type < KingMove)
-        ? (SquareValue(piece, to) - SquareValue(piece, from))
-        : 0;
-
-    if (((type == PawnPush) || (type == PawnCapture)) && promo) {
-      score += (StaticExchange<color, true>(from, to) +
-                ValueOf(promo) - PawnValue);
-    }
-    else {
-      assert(!promo);
-      switch (type) {
-      case Normal:
-        assert((piece >= Knight) && (piece < King));
-        score += StaticExchange<color, true>(from, to);
-        break;
-      case PawnPush:
-      case PawnLung:
-        assert(piece == (color|Pawn));
-        score += (10 + StaticExchange<color, true>(from, to));
-        break;
-      case PawnCapture:
-        assert(piece == (color|Pawn));
-        score += (15 + StaticExchange<color, true>(from, to));
-        break;
-      case EnPassant:
-        assert(piece == (color|Pawn));
-        assert(cap == ((!color)|Pawn));
-        score += (15 + StaticExchange<color, true>(from, to));
-        break;
-      case KingMove:
-        assert(piece == (color|King));
-        assert(!AttackedBy<!color>(to));
-        score += ValueOf(cap);
-        break;
-      case CastleShort:
-      case CastleLong:
-        assert(piece == (color|King));
-        score += 25;
-        break;
-      default:
-        assert(false);
-        break;
-      }
-    }
-
     Move& move = moves[moveCount++];
-    move.Init(type, from, to, piece, cap, promo, score);
+    move.Init(type, from, to, piece, cap, promo,
+              (score + ((type < KingMove)
+                        ? (SquareValue(piece, to) - SquareValue(piece, from))
+                        : 0)));
+
     if (!move.IsCapOrPromo()) {
       if (IsKiller(move)) {
         move.Score() += 50;
@@ -2831,13 +2792,15 @@ private:
         default:
           assert(false);
         }
-        AddMove<color, KingMove>((color|King), from, to, _board[to]);
+        AddMove<color, KingMove>((color|King), from, to,
+                                 (ValueOf(_board[to]) - 50), _board[to], 0);
       }
     }
     else {
       while (dests) {
         PopLowSquare(dests, to);
-        AddMove<color, KingMove>((color|King), from, to, _board[to]);
+        AddMove<color, KingMove>((color|King), from, to,
+                                 (ValueOf(_board[to]) - 50), _board[to], 0);
       }
     }
   }
@@ -2914,7 +2877,7 @@ private:
     while (dests) {
       PopLowSquare(dests, to);
       if (!(flee_sqrs & ~_KING_ATK[to])) {
-        AddMove<color, KingMove>((color|King), from, to);
+        AddMove<color, KingMove>((color|King), from, to, 0, 0, 0);
       }
     }
   }
@@ -2925,12 +2888,14 @@ private:
     if (CanCastleKingSide<color>()) {
       assert(king[color] == (color ? E8 : E1));
       assert(_board[color ? H8 : H1] == (color|Rook));
-      AddMove<color, CastleShort>((color|King), king[color], (color ? G8 : G1));
+      AddMove<color, CastleShort>((color|King), king[color], (color ? G8 : G1),
+                                  25, 0, 0);
     }
     if (CanCastleQueenSide<color>()) {
       assert(king[color] == (color ? E8 : E1));
       assert(_board[color ? A8 : A1] == (color|Rook));
-      AddMove<color, CastleLong>((color|King), king[color], (color ? C8 : C1));
+      AddMove<color, CastleLong>((color|King), king[color], (color ? C8 : C1),
+                                 20, 0, 0);
     }
   }
 
@@ -2942,14 +2907,16 @@ private:
     {
       assert(king[color] == (color ? E8 : E1));
       assert(_board[color ? H8 : H1] == (color|Rook));
-      AddMove<color, CastleShort>((color|King), king[color], (color ? G8 : G1));
+      AddMove<color, CastleShort>((color|King), king[color], (color ? G8 : G1),
+                                  25, 0, 0);
     }
     if (CanCastleQueenSide<color>() &&
         (BIT(king[!color]) & (color ? SouthX(D8) : NorthX(D1))))
     {
       assert(king[color] == (color ? E8 : E1));
       assert(_board[color ? A8 : A1] == (color|Rook));
-      AddMove<color, CastleLong>((color|King), king[color], (color ? C8 : C1));
+      AddMove<color, CastleLong>((color|King), king[color], (color ? C8 : C1),
+                                 20, 0, 0);
     }
   }
 
@@ -2962,7 +2929,8 @@ private:
     while (pawns) {
       PopLowSquare(pawns, from);
       if (!Pinned<color>(from, ep) && !EpPinned<color>(from, ep)) {
-        AddMove<color, EnPassant>((color|Pawn), from, ep, ((!color)|Pawn));
+        AddMove<color, EnPassant>((color|Pawn), from, ep,
+                                  PawnValue, ((!color)|Pawn), 0);
       }
     }
   }
@@ -2989,19 +2957,24 @@ private:
       assert(_board[to] && (COLOR_OF(_board[to]) == !color));
       if (!Pinned<color>(from, to)) {
         if (BIT(to) & _RANK[color ? 0 : 7]) {
-          AddMove<color, PawnCapture>((color|Pawn), from, to, _board[to],
-                                      (color|Queen));
+          AddMove<color, PawnCapture>((color|Pawn), from, to,
+                                      (ValueOf(_board[to]) + QueenValue),
+                                      _board[to], (color|Queen));
           if (under_promote) {
-            AddMove<color, PawnCapture>((color|Pawn), from, to, _board[to],
-                                        (color|Rook));
-            AddMove<color, PawnCapture>((color|Pawn), from, to, _board[to],
-                                        (color|Bishop));
-            AddMove<color, PawnCapture>((color|Pawn), from, to, _board[to],
-                                        (color|Knight));
+            AddMove<color, PawnCapture>((color|Pawn), from, to,
+                                        (ValueOf(_board[to]) + RookValue),
+                                        _board[to], (color|Rook));
+            AddMove<color, PawnCapture>((color|Pawn), from, to,
+                                        (ValueOf(_board[to]) + BishopValue),
+                                        _board[to], (color|Bishop));
+            AddMove<color, PawnCapture>((color|Pawn), from, to,
+                                        (ValueOf(_board[to]) + KnightValue),
+                                        _board[to], (color|Knight));
           }
         }
         else {
-          AddMove<color, PawnCapture>((color|Pawn), from, to, _board[to]);
+          AddMove<color, PawnCapture>((color|Pawn), from, to,
+                                      ValueOf(_board[to]), _board[to], 0);
         }
       }
     }
@@ -3017,19 +2990,24 @@ private:
       assert(_board[to] && (COLOR_OF(_board[to]) == !color));
       if (!Pinned<color>(from, to)) {
         if (BIT(to) & _RANK[color ? 0 : 7]) {
-          AddMove<color, PawnCapture>((color|Pawn), from, to, _board[to],
-                                      (color|Queen));
+          AddMove<color, PawnCapture>((color|Pawn), from, to,
+                                      (ValueOf(_board[to]) + QueenValue),
+                                      _board[to], (color|Queen));
           if (under_promote) {
-            AddMove<color, PawnCapture>((color|Pawn), from, to, _board[to],
-                                        (color|Rook));
-            AddMove<color, PawnCapture>((color|Pawn), from, to, _board[to],
-                                        (color|Bishop));
-            AddMove<color, PawnCapture>((color|Pawn), from, to, _board[to],
-                                        (color|Knight));
+            AddMove<color, PawnCapture>((color|Pawn), from, to,
+                                        (ValueOf(_board[to]) + RookValue),
+                                        _board[to], (color|Rook));
+            AddMove<color, PawnCapture>((color|Pawn), from, to,
+                                        (ValueOf(_board[to]) + BishopValue),
+                                        _board[to], (color|Bishop));
+            AddMove<color, PawnCapture>((color|Pawn), from, to,
+                                        (ValueOf(_board[to]) + KnightValue),
+                                        _board[to], (color|Knight));
           }
         }
         else {
-          AddMove<color, PawnCapture>((color|Pawn), from, to, _board[to]);
+          AddMove<color, PawnCapture>((color|Pawn), from, to,
+                                      ValueOf(_board[to]), _board[to], 0);
         }
       }
     }
@@ -3055,7 +3033,8 @@ private:
     while (lunges) {
       from = (PopLowSquare(lunges, to) + (2 * (color ? North : South)));
       if (!Pinned<color>(from, to)) {
-        AddMove<color, PawnLung>((color|Pawn), from, to);
+        AddMove<color, PawnLung>((color|Pawn), from, to,
+                                 StaticExchange<color, true>(from, to), 0, 0);
       }
     }
 
@@ -3064,15 +3043,20 @@ private:
       from = (PopLowSquare(pushes, to) + (color ? North : South));
       if (!Pinned<color>(from, to)) {
         if (BIT(to) & _RANK[color ? 0 : 7]) {
-          AddMove<color, PawnPush>((color|Pawn), from, to, 0, (color|Queen));
+          AddMove<color, PawnPush>((color|Pawn), from, to,
+                                   (QueenValue - PawnValue), 0, (color|Queen));
           if (under_promote) {
-            AddMove<color, PawnPush>((color|Pawn), from, to, 0, (color|Rook));
-            AddMove<color, PawnPush>((color|Pawn), from, to, 0, (color|Bishop));
-            AddMove<color, PawnPush>((color|Pawn), from, to, 0, (color|Knight));
+            AddMove<color, PawnPush>((color|Pawn), from, to,
+                                     (RookValue - PawnValue), 0, (color|Rook));
+            AddMove<color, PawnPush>((color|Pawn), from, to,
+                                     (BishopValue - PawnValue), 0, (color|Bishop));
+            AddMove<color, PawnPush>((color|Pawn), from, to,
+                                     (KnightValue - PawnValue), 0, (color|Knight));
           }
         }
         else {
-          AddMove<color, PawnPush>((color|Pawn), from, to);
+          AddMove<color, PawnPush>((color|Pawn), from, to,
+                                   StaticExchange<color, true>(from, to), 0, 0);
         }
       }
     }
@@ -3107,14 +3091,18 @@ private:
       if (!flee_sqrs) {
         // does it give check?
         if (BIT(to) & _PAWN_ATK[!color][enemy]) {
-          AddMove<color, PawnPush>((color|Pawn), from, to);
+          AddMove<color, PawnPush>((color|Pawn), from, to,
+                                   StaticExchange<color, true>(from, to), 0, 0);
           continue;
         }
 
         // does it give check with a lung?
         if (lung & _PAWN_ATK[!color][enemy]) {
           AddMove<color, PawnLung>((color|Pawn), from,
-                                   (to + (color ? South : North)));
+                                   (to + (color ? South : North)),
+                                   StaticExchange<color, true>(
+                                     from, (to + (color ? South : North))),
+                                   0, 0);
           continue;
         }
       }
@@ -3157,11 +3145,15 @@ private:
       }
 
       if (!(flee_sqrs_after_move & ~_PAWN_ATK[color][to])) {
-        AddMove<color, PawnPush>((color|Pawn), from, to);
+        AddMove<color, PawnPush>((color|Pawn), from, to,
+                                 StaticExchange<color, true>(from, to), 0, 0);
       }
       if (lung && !(flee_sqrs_after_move & ~_PAWN_ATK[color][LowSquare(lung)])){
         AddMove<color, PawnLung>((color|Pawn), from,
-                                 (to + (color ? South : North)));
+                                 (to + (color ? South : North)),
+                                 StaticExchange<color, true>(
+                                   from, (to + (color ? South : North))),
+                                 0, 0);
       }
     }
   }
@@ -3182,7 +3174,15 @@ private:
       dest = (_KNIGHT_ATK[PopLowSquare(pieces, from)] & dests & ~pc[color]);
       while (dest) {
         if (!Pinned<color>(from, PopLowSquare(dest, to))) {
-          AddMove<color, Normal>((color|Knight), from, to, _board[to]);
+          if (_board[to] >= Knight) {
+            AddMove<color, Normal>((color|Knight), from, to,
+                                   (ValueOf(_board[to]) - 10), _board[to], 0);
+          }
+          else {
+            AddMove<color, Normal>((color|Knight), from, to,
+                                   StaticExchange<color, true>(from, to),
+                                   _board[to], 0);
+          }
         }
       }
     }
@@ -3260,7 +3260,8 @@ private:
       while (dests) {
         if (!Pinned<color>(from, PopLowSquare(dests, to))) {
           if (!(flee_sqrs_after_move & ~_KNIGHT_ATK[to])) {
-            AddMove<color, Normal>((color|Knight), from, to);
+            AddMove<color, Normal>((color|Knight), from, to,
+                                   StaticExchange<color, true>(from, to), 0, 0);
           }
         }
       }
@@ -3283,7 +3284,15 @@ private:
       dest = (slider[PopLowSquare(pieces, from)] & dests & ~pc[color]);
       while (dest) {
         if (!Pinned<color>(from, PopLowSquare(dest, to))) {
-          AddMove<color, Normal>((color|Bishop), from, to, _board[to]);
+          if (_board[to] >= Knight) {
+            AddMove<color, Normal>((color|Bishop), from, to,
+                                   (ValueOf(_board[to]) - 20), _board[to], 0);
+          }
+          else {
+            AddMove<color, Normal>((color|Bishop), from, to,
+                                   StaticExchange<color, true>(from, to),
+                                   _board[to], 0);
+          }
         }
       }
     }
@@ -3352,7 +3361,8 @@ private:
             }
           }
           if (!tmp) {
-            AddMove<color, Normal>((color|Bishop), from, to);
+            AddMove<color, Normal>((color|Bishop), from, to,
+                                   StaticExchange<color, true>(from, to), 0, 0);
           }
         }
       }
@@ -3375,7 +3385,15 @@ private:
       dest = (slider[PopLowSquare(pieces, from)] & dests & ~pc[color]);
       while (dest) {
         if (!Pinned<color>(from, PopLowSquare(dest, to))) {
-          AddMove<color, Normal>((color|Rook), from, to, _board[to]);
+          if (_board[to] >= Rook) {
+            AddMove<color, Normal>((color|Rook), from, to,
+                                   (ValueOf(_board[to]) - 30), _board[to], 0);
+          }
+          else {
+            AddMove<color, Normal>((color|Rook), from, to,
+                                   StaticExchange<color, true>(from, to),
+                                   _board[to], 0);
+          }
         }
       }
     }
@@ -3444,7 +3462,8 @@ private:
             }
           }
           if (!tmp) {
-            AddMove<color, Normal>((color|Rook), from, to);
+            AddMove<color, Normal>((color|Rook), from, to,
+                                   StaticExchange<color, true>(from, to), 0, 0);
           }
         }
       }
@@ -3467,7 +3486,15 @@ private:
       dest = (slider[PopLowSquare(pieces, from)] & dests & ~pc[color]);
       while (dest) {
         if (!Pinned<color>(from, PopLowSquare(dest, to))) {
-          AddMove<color, Normal>((color|Queen), from, to, _board[to]);
+          if (_board[to] >= Queen) {
+            AddMove<color, Normal>((color|Queen), from, to,
+                                   (ValueOf(_board[to]) - 40), _board[to], 0);
+          }
+          else {
+            AddMove<color, Normal>((color|Queen), from, to,
+                                   StaticExchange<color, true>(from, to),
+                                   _board[to], 0);
+          }
         }
       }
     }
@@ -3523,7 +3550,8 @@ private:
             tmp = (flee_sqrs & ~_KING_ATK[to]);
           }
           if (!tmp) {
-            AddMove<color, Normal>((color|Queen), from, to);
+            AddMove<color, Normal>((color|Queen), from, to,
+                                   StaticExchange<color, true>(from, to), 0, 0);
           }
         }
       }

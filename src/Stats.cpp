@@ -29,6 +29,7 @@ void Stats::Clear()
   iidBeta       = 0;
   nullMoves     = 0;
   nmCutoffs     = 0;
+  nmThreats     = 0;
   lateMoves     = 0;
   lmCandidates  = 0;
   lmReductions  = 0;
@@ -56,6 +57,7 @@ Stats& Stats::operator+=(const Stats& other) {
   iidBeta       += other.iidBeta;
   nullMoves     += other.nullMoves;
   nmCutoffs     += other.nmCutoffs;
+  nmThreats     += other.nmThreats;
   lateMoves     += other.lateMoves;
   lmCandidates  += other.lmCandidates;
   lmReductions  += other.lmReductions;
@@ -92,6 +94,7 @@ Stats Stats::Average() const {
   avg.iidBeta       = Avg(iidBeta,      statCount);
   avg.nullMoves     = Avg(nullMoves,    statCount);
   avg.nmCutoffs     = Avg(nmCutoffs,    statCount);
+  avg.nmThreats     = Avg(nmThreats,    statCount);
   avg.lateMoves     = Avg(lateMoves,    statCount);
   avg.lmCandidates  = Avg(lmCandidates, statCount);
   avg.lmReductions  = Avg(lmReductions, statCount);
@@ -132,7 +135,9 @@ void Stats::Print() {
   if (nullMoves) {
     Output() << nullMoves << " null moves, "
              << nmCutoffs << " cutoffs ("
-             << Percent(nmCutoffs, nullMoves) << "%)";
+             << Percent(nmCutoffs, nullMoves) << "%), "
+             << nmThreats << " threats ("
+             << Percent(nmThreats, nullMoves) << "%)";
   }
 
   if (iidCount) {

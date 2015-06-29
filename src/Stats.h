@@ -34,6 +34,7 @@ struct Stats
   uint64_t iidBeta;       // IID searches >= beta
   uint64_t nullMoves;     // ExecNullMove() calls
   uint64_t nmCutoffs;     // null moves cutoffs
+  uint64_t nmThreats;     // null moves threat detections
   uint64_t lateMoves;     // late move count
   uint64_t lmCandidates;  // lmr candidates
   uint64_t lmReductions;  // late move reductions

@@ -1368,87 +1368,18 @@ private:
     score += static_cast<int>(midgame + endgame);
 
     // zero mobility is always bad
+    assert(!(state & (color ? WhiteThreat : BlackThreat)));
     p = (_KING_ATK[sqr] & ~(pc[color] | atks[!color] | _KING_ATK[king[!color]]));
     if (!p) {
       score -= 20;
-      if (_test && (_KNIGHT_ATK[sqr] & atks[(!color)|Knight] & ~atks[color])) {
-        score -= 20;
+      if ((_test & 2) &&
+          (_KNIGHT_ATK[sqr] & atks[(!color)|Knight] & ~atks[color]))
+      {
+        score -= 10;
         state |= (color ? WhiteThreat : BlackThreat);
       }
     }
-    else if (_test) {
-      // is there a potential mate threat?
-      // NOTE: this routine is imperfect in many ways, but it should catch
-      // a large bulk of real mate threats, such as back rank mates
-      w = (~atks[color] &
-           ((kcross[color] & (atks[(!color)|Rook] | atks[(!color)|Queen])) |
-            (kdiags[color] & (atks[(!color)|Bishop] | atks[(!color)|Queen]))));
-      while (w) {
-        PopLowSquare(w, chksqr);
-        z = _ALL;
-        switch (_diff.Dir(sqr, chksqr)) {
-        case SouthWest:
-          if (p == (p & _NORTH_EAST[chksqr])) {
-            z = (_SOUTH_WEST[sqr] & kdiags[color] & atks[color]);
-          }
-          break;
-        case South:
-          if (p == (p & _NORTH[chksqr])) {
-            z = (_SOUTH[sqr] & kcross[color] & atks[color]);
-          }
-          break;
-        case SouthEast:
-          if (p == (p & _NORTH_WEST[chksqr])) {
-            z = (_SOUTH_EAST[sqr] & kdiags[color] & atks[color]);
-          }
-          break;
-        case West:
-          if (p == (p & _EAST[chksqr])) {
-            z = (_WEST[sqr] & kcross[color] & atks[color]);
-          }
-          break;
-        case East:
-          if (p == (p & _WEST[chksqr])) {
-            z = (_EAST[sqr] & kcross[color] & atks[color]);
-          }
-          break;
-        case NorthWest:
-          if (p == (p & _SOUTH_EAST[chksqr])) {
-            z = (_NORTH_WEST[sqr] & kdiags[color] & atks[color]);
-          }
-          break;
-        case North:
-          if (p == (p & _SOUTH[chksqr])) {
-            z = (_NORTH[sqr] & kcross[color] & atks[color]);
-          }
-          break;
-        case NorthEast:
-          if (p == (p & _SOUTH_WEST[chksqr])) {
-            z = (_NORTH_EAST[sqr] & kdiags[color] & atks[color]);
-          }
-          break;
-        default:
-          assert(false);
-        }
-        if (!z) {
-          if ((z = (_KING_ATK[sqr] & BIT(chksqr) &
-                    ~(atks[(!color)|Pawn] | atks[(!color)|Knight] |
-                      _KING_ATK[king[!color]]))))
-          {
-            if ((!!atks[(!color)|Bishop] +
-                 !!atks[(!color)|Rook] +
-                 !!atks[(!color)|Queen]) >= 2)
-            {
-              z = 0;
-            }
-            // TODO handle xray defenders
-          }
-          if (!z) {
-            score -= 20;
-            state |= (color ? WhiteThreat : BlackThreat);
-          }
-        }
-      }
+    else if (_test & 2) {
       if ((w = (_KNIGHT_ATK[sqr] & atks[(!color)|Knight] & ~atks[color]))) {
         while (w) {
           PopLowSquare(w, chksqr);
@@ -1456,6 +1387,80 @@ private:
             score -= 20;
             state |= (color ? WhiteThreat : BlackThreat);
             break;
+          }
+        }
+      }
+      if (!(state & (color ? WhiteThreat : BlackThreat))) {
+        // is there a potential mate threat?
+        // NOTE: this routine is imperfect in many ways, but it should catch
+        // a large bulk of real mate threats, such as back rank mates
+        w = (~atks[color] &
+             ((kcross[color] & (atks[(!color)|Rook] | atks[(!color)|Queen])) |
+              (kdiags[color] & (atks[(!color)|Bishop] | atks[(!color)|Queen]))));
+        while (w) {
+          PopLowSquare(w, chksqr);
+          z = _ALL;
+          switch (_diff.Dir(sqr, chksqr)) {
+          case SouthWest:
+            if (p == (p & _NORTH_EAST[chksqr])) {
+              z = (_SOUTH_WEST[sqr] & kdiags[color] & atks[color]);
+            }
+            break;
+          case South:
+            if (p == (p & _NORTH[chksqr])) {
+              z = (_SOUTH[sqr] & kcross[color] & atks[color]);
+            }
+            break;
+          case SouthEast:
+            if (p == (p & _NORTH_WEST[chksqr])) {
+              z = (_SOUTH_EAST[sqr] & kdiags[color] & atks[color]);
+            }
+            break;
+          case West:
+            if (p == (p & _EAST[chksqr])) {
+              z = (_WEST[sqr] & kcross[color] & atks[color]);
+            }
+            break;
+          case East:
+            if (p == (p & _WEST[chksqr])) {
+              z = (_EAST[sqr] & kcross[color] & atks[color]);
+            }
+            break;
+          case NorthWest:
+            if (p == (p & _SOUTH_EAST[chksqr])) {
+              z = (_NORTH_WEST[sqr] & kdiags[color] & atks[color]);
+            }
+            break;
+          case North:
+            if (p == (p & _SOUTH[chksqr])) {
+              z = (_NORTH[sqr] & kcross[color] & atks[color]);
+            }
+            break;
+          case NorthEast:
+            if (p == (p & _SOUTH_WEST[chksqr])) {
+              z = (_NORTH_EAST[sqr] & kdiags[color] & atks[color]);
+            }
+            break;
+          default:
+            assert(false);
+          }
+          if (!z) {
+            if ((z = (_KING_ATK[sqr] & BIT(chksqr) &
+                      ~(atks[(!color)|Pawn] | atks[(!color)|Knight] |
+                        _KING_ATK[king[!color]]))))
+            {
+              if ((!!atks[(!color)|Bishop] +
+                   !!atks[(!color)|Rook] +
+                   !!atks[(!color)|Queen]) >= 2)
+              {
+                z = 0;
+              }
+              // TODO handle xray defenders
+            }
+            if (!z) {
+              score -= 20;
+              state |= (color ? WhiteThreat : BlackThreat);
+            }
           }
         }
       }
@@ -3786,6 +3791,200 @@ private:
   }
 
   //--------------------------------------------------------------------------
+  bool LastMoveEnabledPV(const Bitfoot& dest) const {
+    assert(ColorToMove() != dest.ColorToMove());
+    assert(lastMove.IsValid());
+    assert(lastPieceMoved > 0);
+    assert(COLOR_OF(lastPieceMoved) == dest.ColorToMove());
+    assert(dest.pvCount > 0);
+    assert(dest.pv[0].IsValid());
+
+    const int from = dest.pv[0].GetFrom();
+    const int to = dest.pv[0].GetTo();
+
+    assert(_board[from] > 0);
+    assert(COLOR_OF(_board[from]) == dest.ColorToMove());
+    assert(!_board[to] || (COLOR_OF(_board[to]) == ColorToMove()));
+
+    // dest.pv[0] is continuation of lastMove?
+    // or occupies square vacated by last move?
+    if (effected & (BIT(from) | BIT(to))) {
+      assert((from == lastMove.GetTo()) || (to == lastMove.GetFrom()));
+      return true;
+    }
+
+    // dest.pv[0] passes through hole made by lastMove?
+    switch (_diff.Dir(from, to)) {
+    case SouthWest:
+      if (effected & SouthWestO(from)) {
+        return true;
+      }
+      break;
+    case South:
+      if (effected & SouthO(from)) {
+        return true;
+      }
+      break;
+    case SouthEast:
+      if (effected & SouthEastO(from)) {
+        return true;
+      }
+      break;
+    case West:
+      if (effected & WestO(from)) {
+        return true;
+      }
+      break;
+    case East:
+      if (effected & EastO(from)) {
+        return true;
+      }
+      break;
+    case NorthWest:
+      if (effected & NorthWestO(from)) {
+        return true;
+      }
+      break;
+    case North:
+      if (effected & NorthO(from)) {
+        return true;
+      }
+      break;
+    case NorthEast:
+      if (effected & NorthEastO(from)) {
+        return true;
+      }
+      break;
+    default:
+      break;
+    }
+
+    // does lastMove protect dest.pv[0]?
+    const int lastDest = lastMove.GetTo();
+    if (_board[lastDest] == lastPieceMoved) {
+      assert(to != lastDest);
+      switch (Black|lastPieceMoved) {
+      case (BlackPawn):
+        if (_PAWN_ATK[dest.ColorToMove()][lastDest] & BIT(to)) {
+          return true;
+        }
+        break;
+      case (BlackKnight):
+        if (_KNIGHT_ATK[lastDest] & BIT(to)) {
+          return true;
+        }
+        break;
+      case (BlackBishop):
+        switch (_diff.Dir(lastDest, to)) {
+        case SouthWest:
+          if (SouthWestXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case SouthEast:
+          if (SouthEastXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case NorthWest:
+          if (NorthWestXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case NorthEast:
+          if (NorthEastXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        default:
+          break;
+        }
+        break;
+      case (BlackRook):
+        switch (_diff.Dir(lastDest, to)) {
+        case South:
+          if (SouthXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case West:
+          if (WestXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case East:
+          if (EastXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case North:
+          if (NorthXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        default:
+          break;
+        }
+        break;
+      case (BlackQueen):
+        switch (_diff.Dir(lastDest, to)) {
+        case SouthWest:
+          if (SouthWestXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case South:
+          if (SouthXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case SouthEast:
+          if (SouthEastXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case West:
+          if (WestXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case East:
+          if (EastXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case NorthWest:
+          if (NorthWestXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case North:
+          if (NorthXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        case NorthEast:
+          if (NorthEastXO(lastDest) & BIT(to)) {
+            return true;
+          }
+          break;
+        default:
+          break;
+        }
+        break;
+      case (BlackKing):
+        if (_KING_ATK[lastDest] & BIT(to)) {
+          return true;
+        }
+        break;
+      default:
+        assert(false);
+      }
+    }
+    return false;
+  }
+
+  //--------------------------------------------------------------------------
   template<Color color>
   uint64_t PerftSearch(const int depth) {
     GenerateMoves<color>();
@@ -3894,6 +4093,7 @@ private:
         pv[0] = firstMove;
         pvCount = 1;
         if ((entry->score >= beta) && !firstMove.IsCapOrPromo()) {
+          IncHistory(firstMove, check, entry->depth);
           AddKiller(firstMove);
         }
         return entry->score;
@@ -3904,6 +4104,7 @@ private:
           pv[0] = firstMove;
           pvCount = 1;
           if (!firstMove.IsCapOrPromo()) {
+            IncHistory(firstMove, check, entry->depth);
             AddKiller(firstMove);
           }
           return entry->score;
@@ -3913,9 +4114,10 @@ private:
         assert(false);
       }
 
-      // don't use firstMove unless it's a cap or promo, or we're in check
+      // stand pat if best move is non-volatile
       if (!check && !firstMove.IsCapOrPromo()) {
-        firstMove.Clear();
+        assert(!pvCount);
+        return standPat;
       }
     }
 
@@ -4052,6 +4254,7 @@ private:
     // extend depth if in check and previous ply not extended
     const bool check = InCheck();
     if (_ext && check && !parent->extended) {
+      assert(!parent->reduced);
       if (MULTI_BIT(chkrs)) {
         _stats.chkExts++;
         extended++;
@@ -4083,13 +4286,16 @@ private:
     }
 
     // extend depth if we are facing a new threat
-    if ((_test > 1) && !extended && !parent->extended &&
+    if ((_test & 4) && !extended && !parent->extended &&
         (state & (color ? WhiteThreat : BlackThreat)) &&
         !(parent->state & (color ? WhiteThreat : BlackThreat)))
     {
       _stats.threatExts++;
       extended++;
       depth++;
+      if (parent->reduced) {
+        parent->reduced--;
+      }
     }
 
     // do we have anything for this position in the transposition table?
@@ -4152,6 +4358,9 @@ private:
         _stats.hashExts++;
         extended++;
         depth++;
+        if (parent->reduced) {
+          parent->reduced--;
+        }
       }
     }
 
@@ -4174,13 +4383,53 @@ private:
       }
     }
 
+    // extend reduced depth lines that pose a threat
+    bool nullMoveDone = false;
+    if ((_test & 1) && nullMoveOk && !extended && parent->reduced &&
+        (depth > 1) && (pc[color|King] != pc[color]) &&
+        (abs(beta) < WinningScore))
+    {
+      assert(!check);
+      assert(!pvNode);
+      assert(parent->reduced > 0);
+      nullMoveDone = true;
+      ExecNullMove<color>(*child);
+      eval = -child->QSearch<!color>(-standPat, (1 - standPat), 0);
+      if (_stop) {
+        return beta;
+      }
+      if (depth <= 3) {
+        nullMoveOk = 0;
+        if ((standPat >= beta) && (eval >= beta) && MajorsAndMinors<color>()) {
+          pvCount = 0;
+          _stats.nmCutoffs++;
+          return standPat;
+        }
+      }
+      if (child->pvCount && ((eval + PawnValue) <= standPat)) {
+        if (LastMoveEnabledPV(*child)) {
+          _stats.nmThreats++;
+          if (eval <= -WinningScore) {
+            depth += parent->reduced;
+            parent->reduced = 0;
+          }
+          else {
+            parent->reduced--;
+            depth++;
+          }
+        }
+      }
+    }
+
     // null move pruning
     // if we can get a score >= beta without even making a move, return beta
-    if (_nmp && nullMoveOk && !check && !pvNode && (depth > 1) &&
+    if (_nmp && nullMoveOk && !check && !pvNode && (depth > 1) && !extended &&
         (standPat >= beta) && (abs(beta) < WinningScore) &&
         MajorsAndMinors<color>())
     {
-      ExecNullMove<color>(*child);
+      if (!nullMoveDone) {
+        ExecNullMove<color>(*child);
+      }
       child->nullMoveOk = 0;
       const int rdepth = std::max<int>(0, (depth - 3 - (depth / 6) -
                                            ((standPat - beta) >= 400)));
@@ -4194,10 +4443,8 @@ private:
         // TODO do verification search at high depths
         pvCount = 0;
         _stats.nmCutoffs++;
-        return beta; // do not return eval
+        return standPat; // do not return eval
       }
-      // TODO return alpha if threat detected and it was enabled by parent move
-      // TODO if threat and NOT caused by parent move do parent->nullMoveOK = 0
     }
 
     // internal iterative deepening if no firstMove in transposition table
@@ -4206,10 +4453,8 @@ private:
     {
       assert(!pvCount);
       _stats.iidCount++;
-      const int saved = nullMoveOk;
       nullMoveOk = 0;
       eval = Search<color>((beta - 1), beta, (depth - (pvNode ? 2 : 4)), true);
-      nullMoveOk = saved;
       if (_stop || !pvCount) {
         return eval;
       }
@@ -4218,6 +4463,7 @@ private:
       }
       assert(pv[0].IsValid());
       firstMove = pv[0];
+      reduced = 0;
     }
 
     // make sure firstMove is populated
@@ -4238,6 +4484,9 @@ private:
         _stats.oneReplyExts++;
         extended++;
         depth++;
+        if (parent->reduced) {
+          parent->reduced--;
+        }
       }
     }
 
@@ -4315,13 +4564,13 @@ private:
       eval = (newDepth > 0)
           ? -child->Search<!color>(-(alpha + 1), -alpha, newDepth, true)
           : -child->QSearch<!color>(-(alpha + 1), -alpha, 0);
-      child->nullMoveOk = 0;
 
       // re-search at full depth?
       if (!_stop && reduced && (eval > alpha)) {
         assert(depth > 1);
         _stats.lmResearches++;
         reduced = 0;
+        child->nullMoveOk = 0;
         eval = -child->Search<!color>(-(alpha + 1), -alpha, (depth - 1), false);
         if (!_stop && (eval > alpha)) {
           _stats.lmConfirmed++;
@@ -4331,6 +4580,7 @@ private:
       // re-search with full window?
       if (!_stop && pvNode && (eval > alpha)) {
         assert(!reduced);
+        child->nullMoveOk = 0;
         eval = (depth > 1)
             ? -child->Search<!color>(-beta, -alpha, (depth - 1), false)
             : -child->QSearch<!color>(-beta, -alpha, 0);

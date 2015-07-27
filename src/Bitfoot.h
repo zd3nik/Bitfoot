@@ -224,8 +224,8 @@ private:
   }
 
   //--------------------------------------------------------------------------
-  inline float RemainingMaterial(const Color color) const {
-    return (static_cast<float>(material[color]) / StartMaterial);
+  inline double RemainingMaterial(const Color color) const {
+    return (static_cast<double>(material[color]) / StartMaterial);
   }
 
   //--------------------------------------------------------------------------
@@ -1362,9 +1362,9 @@ private:
     uint64_t z;
 
     // apply king piece/square value here instead of Exec()
-    const float ratio = RemainingMaterial(!color);
-    const float midgame = (ratio * _PIECE_SQR[0][sqr]);
-    const float endgame = ((1.0 - ratio) * _PIECE_SQR[1][sqr]);
+    const double ratio = RemainingMaterial(!color);
+    const double midgame = (ratio * _PIECE_SQR[0][sqr]);
+    const double endgame = ((1.0 - ratio) * _PIECE_SQR[1][sqr]);
     score += static_cast<int>(midgame + endgame);
 
     // zero mobility is always bad
@@ -1372,15 +1372,18 @@ private:
     p = (_KING_ATK[sqr] & ~(pc[color] | atks[!color] | _KING_ATK[king[!color]]));
     if (!p) {
       score -= 20;
-      if ((_test & 2) &&
-          (_KNIGHT_ATK[sqr] & atks[(!color)|Knight] & ~atks[color]))
-      {
+    }
+
+    // is there a potential mate threat?
+    // NOTE: this routine is imperfect in many ways, but it should catch
+    // a large bulk of real mate threats, such as back rank mates
+    if ((_test & 2) && !MULTI_BIT(p)) {
+      w = (_KNIGHT_ATK[sqr] & atks[(!color)|Knight] & ~atks[color]);
+      if (w && !p) {
         score -= 10;
         state |= (color ? WhiteThreat : BlackThreat);
       }
-    }
-    else if (_test & 2) {
-      if ((w = (_KNIGHT_ATK[sqr] & atks[(!color)|Knight] & ~atks[color]))) {
+      else {
         while (w) {
           PopLowSquare(w, chksqr);
           if ((p & _KNIGHT_ATK[chksqr]) == p) {
@@ -1391,9 +1394,6 @@ private:
         }
       }
       if (!(state & (color ? WhiteThreat : BlackThreat))) {
-        // is there a potential mate threat?
-        // NOTE: this routine is imperfect in many ways, but it should catch
-        // a large bulk of real mate threats, such as back rank mates
         w = (~atks[color] &
              ((kcross[color] & (atks[(!color)|Rook] | atks[(!color)|Queen])) |
               (kdiags[color] & (atks[(!color)|Bishop] | atks[(!color)|Queen]))));
@@ -4383,59 +4383,29 @@ private:
       }
     }
 
-    // extend reduced depth lines that pose a threat
-    bool nullMoveDone = false;
-    if ((_test & 1) && nullMoveOk && !extended && parent->reduced &&
-        (depth > 1) && (pc[color|King] != pc[color]) &&
-        (abs(beta) < WinningScore))
-    {
-      assert(!check);
-      assert(!pvNode);
-      assert(parent->reduced > 0);
-      nullMoveDone = true;
-      ExecNullMove<color>(*child);
-      eval = -child->QSearch<!color>(-standPat, (1 - standPat), 0);
-      if (_stop) {
-        return beta;
-      }
-      if (depth <= 3) {
-        nullMoveOk = 0;
-        if ((standPat >= beta) && (eval >= beta) && MajorsAndMinors<color>()) {
-          pvCount = 0;
-          _stats.nmCutoffs++;
-          return standPat;
-        }
-      }
-      if (child->pvCount && ((eval + PawnValue) <= standPat)) {
-        if (LastMoveEnabledPV(*child)) {
-          _stats.nmThreats++;
-          if (eval <= -WinningScore) {
-            depth += parent->reduced;
-            parent->reduced = 0;
-          }
-          else {
-            parent->reduced--;
-            depth++;
-          }
-        }
-      }
-    }
-
     // null move pruning
     // if we can get a score >= beta without even making a move, return beta
     if (_nmp && nullMoveOk && !check && !pvNode && (depth > 1) && !extended &&
         (standPat >= beta) && (abs(beta) < WinningScore) &&
         MajorsAndMinors<color>())
     {
-      if (!nullMoveDone) {
-        ExecNullMove<color>(*child);
-      }
+      assert((alpha + 1) == beta);
+      ExecNullMove<color>(*child);
       child->nullMoveOk = 0;
-      const int rdepth = std::max<int>(0, (depth - 3 - (depth / 6) -
-                                           ((standPat - beta) >= 400)));
+      int rdepth = std::max<int>(0, (depth - 3));
+      if (rdepth > 3) {
+        eval = -child->QSearch<!color>(-beta, -alpha, 0);
+        if (_stop) {
+          return beta;
+        }
+        if (eval >= beta) {
+          _stats.nmThreats++;
+          rdepth--;
+        }
+      }
       eval = (rdepth > 0)
-          ? -child->Search<!color>(-beta, (1 - beta), rdepth, false)
-          : -child->QSearch<!color>(-beta, (1 - beta), 0);
+          ? -child->Search<!color>(-beta, -alpha, rdepth, false)
+          : -child->QSearch<!color>(-beta, -alpha, 0);
       if (_stop) {
         return beta;
       }
@@ -4463,7 +4433,6 @@ private:
       }
       assert(pv[0].IsValid());
       firstMove = pv[0];
-      reduced = 0;
     }
 
     // make sure firstMove is populated
@@ -4494,6 +4463,7 @@ private:
     const int orig_alpha = alpha;
     Exec<color>(firstMove, *child);
     child->nullMoveOk = 1;
+    reduced = 0;
     eval = (depth > 1)
         ? -child->Search<!color>(-beta, -alpha, (depth - 1), !cutNode)
         : -child->QSearch<!color>(-beta, -alpha, 0);
@@ -4549,7 +4519,7 @@ private:
       {
         _stats.lmReductions++;
         reduced = _lmr;
-        if ((depth > (reduced + 1)) && (_hist[move->GetHistoryIndex()] < -1)) {
+        if (depth > (reduced + 1)) {
           _stats.lmDoubleRed++;
           reduced++;
         }
@@ -4569,8 +4539,8 @@ private:
       if (!_stop && reduced && (eval > alpha)) {
         assert(depth > 1);
         _stats.lmResearches++;
-        reduced = 0;
         child->nullMoveOk = 0;
+        reduced = 0;
         eval = -child->Search<!color>(-(alpha + 1), -alpha, (depth - 1), false);
         if (!_stop && (eval > alpha)) {
           _stats.lmConfirmed++;

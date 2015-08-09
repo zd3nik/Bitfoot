@@ -139,14 +139,16 @@ public:
            (primaryFlag == HashEntry::ExactScore));
     assert(!(otherFlags & ~HashEntry::OtherMask));
 
-    if (key && entries) { // TODO && (key != tt->key or depth >= tt->depth)
-      _stores++;
-      HashEntry* entry   = (entries + (key & keyMask));
-      entry->positionKey = key;
-      entry->moveBits    = bestmove.GetBits();
-      entry->score       = static_cast<int16_t>(bestmove.GetScore());
-      entry->depth       = static_cast<uint8_t>(depth);
-      entry->flags       = static_cast<uint8_t>(primaryFlag | otherFlags);
+    if (key && entries) {
+      HashEntry* entry = (entries + (key & keyMask));
+      if (depth || !entry->depth || (key != entry->positionKey)) {
+        _stores++;
+        entry->positionKey = key;
+        entry->moveBits    = bestmove.GetBits();
+        entry->score       = static_cast<int16_t>(bestmove.GetScore());
+        entry->depth       = static_cast<uint8_t>(depth);
+        entry->flags       = static_cast<uint8_t>(primaryFlag | otherFlags);
+      }
     }
   }
 

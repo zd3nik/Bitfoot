@@ -133,8 +133,6 @@ private:
 
   //--------------------------------------------------------------------------
   struct PawnInfo {
-    uint64_t pawns;
-    uint64_t atks;
     uint64_t backward;
     uint64_t connected;
     uint64_t passed;
@@ -148,8 +146,8 @@ private:
   //--------------------------------------------------------------------------
   // unchanging variables
   //--------------------------------------------------------------------------
-  Bitfoot*  parent;
-  Bitfoot*  child;
+  Bitfoot* parent;
+  Bitfoot* child;
   int      ply;
 
   //--------------------------------------------------------------------------
@@ -206,8 +204,7 @@ private:
   //--------------------------------------------------------------------------
   // variables updated by search methods
   //--------------------------------------------------------------------------
-  int  extended;
-  int  reduced;
+  int  depthChange;
   int  nullMoveOk;
   int  pvCount;
   Move killer[2];
@@ -282,7 +279,7 @@ private:
 
   //--------------------------------------------------------------------------
   inline void IncHistory(const Move& move, const bool check, const int depth) {
-    if (!check && (depth > 0)) {
+    if (!check) {
       const int idx = move.GetHistoryIndex();
       const int val = (_hist[idx] + depth + 2);
       _hist[idx] = static_cast<char>(std::min<int>(val, 40));
@@ -824,137 +821,117 @@ private:
   //--------------------------------------------------------------------------
   template<Color color>
   inline int PawnEval() {
+    uint64_t x;
     uint64_t p = pc[color|Pawn];
     assert(p);
 
-    uint64_t x;
-
-    // get pawn info, calculate if needed
     // do not update PawnInfo with info relative to pieces other than pawns
     PawnInfo& info = pinfo[color];
-    if (info.pawns != p) {
-      assert(!info.pawns);
-      assert(!info.atks);
-      assert(!info.backward);
-      assert(!info.connected);
-      assert(!info.passed);
-      assert(!info.closed);
-      assert(!info.behind);
-      assert(!info.front);
-      assert(!info.score);
-      assert(!info.count);
+    info.count = BitCount(p);
 
-      info.pawns = p;
-      info.count = BitCount(p);
+    if (color) {
+      atks[color|Pawn] = (((p & ~_FILE[0]) >> 9) | ((p & ~_FILE[7]) >> 7));
+    }
+    else {
+      atks[color|Pawn] = (((p & ~_FILE[0]) << 7) | ((p & ~_FILE[7]) << 9));
+    }
 
-      if (color) {
-        info.atks = (((p & ~_FILE[0]) >> 9) | ((p & ~_FILE[7]) >> 7));
-      }
-      else {
-        info.atks = (((p & ~_FILE[0]) << 7) | ((p & ~_FILE[7]) << 9));
+    while (p) {
+      const int sqr = LowSquare(p);
+      const uint64_t bit = LOW_BIT(p);
+      p ^= bit;
+
+      // keep track of space in front of pawns
+      if (!(pc[color|Pawn] & (color ? _SOUTH[sqr] : _NORTH[sqr]))) {
+        info.front |= (color ? _SOUTH[sqr] : _NORTH[sqr]);
       }
 
-      while (p) {
-        const int sqr = LowSquare(p);
-        const uint64_t bit = LOW_BIT(p);
-        p ^= bit;
+      // keep track of which files we have pawns on
+      info.closed |= _FILE[XC(sqr)];
 
-        // keep track of space in front of pawns
-        if (!(pc[color|Pawn] & (color ? _SOUTH[sqr] : _NORTH[sqr]))) {
-          info.front |= (color ? _SOUTH[sqr] : _NORTH[sqr]);
+      // is it passed?
+      if (color ? !(_WIDE_SOUTH[sqr] & pc[WhitePawn])
+          : !(_WIDE_NORTH[sqr] & pc[BlackPawn]))
+      {
+        // scored in PasserEval
+        info.passed |= bit;
+      }
+
+      // bonus for potential passers
+      else if (!(color ? (_SOUTH[sqr] & pc[WhitePawn])
+                 : (_NORTH[sqr] & pc[BlackPawn])) &&
+               !(Occupied() & (color ? (bit >> 8) : (bit << 8))))
+      {
+        x = (color ? ((_WIDE_SOUTH[sqr] ^ _SOUTH[sqr]) & pc[WhitePawn])
+                   : ((_WIDE_NORTH[sqr] ^ _NORTH[sqr]) & pc[BlackPawn]));
+        if (x) {
+          const int count = BitCount(x);
+          x = (color ? ((_WIDE_NORTH[sqr] ^ _NORTH[sqr]) & pc[BlackPawn])
+                     : ((_WIDE_SOUTH[sqr] ^ _SOUTH[sqr]) & pc[WhitePawn]));
+          if (count >= BitCount(x)) {
+            info.score += (8 * (color ? (7 - YC(sqr)) : YC(sqr)));
+          }
         }
+      }
 
-        // keep track of which files we have pawns on
-        info.closed |= _FILE[XC(sqr)];
+      // is it supported?
+      if (pc[color|Pawn] & (_ADJACENT[sqr] | _PAWN_ATK[!color][sqr])) {
+        info.connected |= bit;
+        info.behind |= (color ? _NORTH[sqr] : _SOUTH[sqr]);
 
-        // is it passed?
-        if (color ? !(_WIDE_SOUTH[sqr] & pc[WhitePawn])
-                  : !(_WIDE_NORTH[sqr] & pc[BlackPawn]))
+        // will be counted twice if adjacent
+        info.score += 4;
+      }
+
+      // is it giving support?
+      else if (pc[color|Pawn] & _PAWN_ATK[color][sqr]) {
+        info.connected |= bit;
+        info.behind |= (color ? _NORTH[sqr] : _SOUTH[sqr]);
+      }
+
+      // is it backward/isolated?
+      if (!(pc[color|Pawn] & (color ? (_WIDE_NORTH[sqr] ^ _NORTH[sqr])
+                              : (_WIDE_SOUTH[sqr] ^ _SOUTH[sqr]))))
+      {
+        info.backward |= bit;
+        if ((x = (pc[(!color)|Pawn] &
+                  _PAWN_ATK[color][sqr + (color ? South : North)])))
         {
-          // scored in PasserEval
-          info.passed |= bit;
+          // guarded by enemy pawn(s)
+          info.score -= (MULTI_BIT(x) ? 16 : 12);
+        }
+        else if (SquareValue((color|Pawn), sqr) < 12) {
+          info.score -= 8;
         }
 
-        // bonus for potential passers
-        else if (!(color ? (_SOUTH[sqr] & pc[WhitePawn])
-                         : (_NORTH[sqr] & pc[BlackPawn])) &&
-                 !(Occupied() & (color ? (bit >> 8) : (bit << 8))))
-        {
-          x = (color ? ((_WIDE_SOUTH[sqr] ^ _SOUTH[sqr]) & pc[WhitePawn])
-                     : ((_WIDE_NORTH[sqr] ^ _NORTH[sqr]) & pc[BlackPawn]));
-          if (x) {
-            const int count = BitCount(x);
-            x = (color ? ((_WIDE_NORTH[sqr] ^ _NORTH[sqr]) & pc[BlackPawn])
-                       : ((_WIDE_SOUTH[sqr] ^ _SOUTH[sqr]) & pc[WhitePawn]));
-            if (count >= BitCount(x)) {
-              info.score += (8 * (color ? (7 - YC(sqr)) : YC(sqr)));
-            }
-          }
+        // extra penalty if on an open file
+        if (!(pc[(!color)|Pawn] & (color ? _SOUTH[sqr] : _NORTH[sqr]))) {
+          info.score -= 8;
         }
+      }
 
-        // is it supported?
-        if (pc[color|Pawn] & (_ADJACENT[sqr] | _PAWN_ATK[!color][sqr])) {
-          info.connected |= bit;
-          info.behind |= (color ? _NORTH[sqr] : _SOUTH[sqr]);
-
-          // will be counted twice if adjacent
-          info.score += 4;
-        }
-
-        // is it giving support?
-        else if (pc[color|Pawn] & _PAWN_ATK[color][sqr]) {
-          info.connected |= bit;
-          info.behind |= (color ? _NORTH[sqr] : _SOUTH[sqr]);
-        }
-
-        // is it backward/isolated?
-        if (!(pc[color|Pawn] & (color ? (_WIDE_NORTH[sqr] ^ _NORTH[sqr])
-                                      : (_WIDE_SOUTH[sqr] ^ _SOUTH[sqr]))))
-        {
-          info.backward |= bit;
-          if ((x = (pc[(!color)|Pawn] &
-                    _PAWN_ATK[color][sqr + (color ? South : North)])))
-          {
-            // guarded by enemy pawn(s)
-            info.score -= (MULTI_BIT(x) ? 16 : 12);
-          }
-          else if (SquareValue((color|Pawn), sqr) < 12) {
-            info.score -= 8;
-          }
-
-          // extra penalty if on an open file
-          if (!(pc[(!color)|Pawn] & (color ? _SOUTH[sqr] : _NORTH[sqr]))) {
-            info.score -= 8;
-          }
-        }
-
-        // penalty if doubled, more so if backward/isolated
-        if (pc[color|Pawn] & (color ? _NORTH[sqr] : _SOUTH[sqr])) {
-          info.score -= ((bit & info.backward) ? 40 : 24);
-        }
+      // penalty if doubled, more so if backward/isolated
+      if (pc[color|Pawn] & (color ? _NORTH[sqr] : _SOUTH[sqr])) {
+        info.score -= ((bit & info.backward) ? 40 : 24);
       }
     }
 
-    assert(pinfo[color].pawns == pc[color|Pawn]);
     assert(pinfo[color].backward == (pinfo[color].backward & pc[color|Pawn]));
     assert(pinfo[color].connected == (pinfo[color].connected & pc[color|Pawn]));
     assert(pinfo[color].passed == (pinfo[color].passed & pc[color|Pawn]));
-    assert(!(pinfo[color].pawns & ~pinfo[color].closed));
-    assert(!(pinfo[color].pawns & pinfo[color].front));
     assert(pinfo[color].count == BitCount(pc[color|Pawn]));
-
-    // track pawn attacks
-    atks[color|Pawn] = info.atks;
+    assert(!(pc[color|Pawn] & ~pinfo[color].closed));
+    assert(!(pc[color|Pawn] & pinfo[color].front));
 
     // are any pawns menacing the enemy king?
-    if (info.atks & _KING_ZONE[king[!color]]) {
+    if (atks[color|Pawn] & _KING_ZONE[king[!color]]) {
       atkCount[color]++;
     }
 
     // penalty for blocked central pawns on home square
     if (Occupied()
         & (color ? (BIT(D6) | BIT(E6)) : (BIT(D3) | BIT(E3)))
-        & (color ? (info.pawns >> 8) : (info.pawns << 8)))
+        & (color ? (pc[color|Pawn] >> 8) : (pc[color|Pawn] << 8)))
     {
       // do not update PawnInfo struct with info relative to non-pawns
       return (info.score - 16);
@@ -1377,7 +1354,7 @@ private:
     // is there a potential mate threat?
     // NOTE: this routine is imperfect in many ways, but it should catch
     // a large bulk of real mate threats, such as back rank mates
-    if ((_test & 2) && !MULTI_BIT(p)) {
+    if ((_test & 4) && !MULTI_BIT(p)) {
       w = (_KNIGHT_ATK[sqr] & atks[(!color)|Knight] & ~atks[color]);
       if (w && !p) {
         score -= 10;
@@ -1583,8 +1560,6 @@ private:
     int score = 0;
 
     assert(p);
-    assert(pinfo[White].pawns == pc[WhitePawn]);
-    assert(pinfo[Black].pawns == pc[BlackPawn]);
     assert(pinfo[White].passed == (pc[WhitePawn] & pinfo[White].passed));
     assert(pinfo[Black].passed == (pc[BlackPawn] & pinfo[Black].passed));
 
@@ -1778,6 +1753,7 @@ private:
     assert(!(state & Draw));
     memset(&evals, 0, sizeof(evals));
 #endif
+    memset(pinfo, 0, sizeof(pinfo));
     memset(atks, 0, sizeof(atks));
     atkCount[White] = 0;
     atkCount[Black] = 0;
@@ -2465,37 +2441,6 @@ private:
       dest.state |= Check;
     }
 
-    // reset pawn info structs?
-    if ((dest.pinfo[White].pawns != dest.pc[WhitePawn]) ||
-        (dest.pinfo[Black].pawns != dest.pc[BlackPawn]))
-    {
-      memset(dest.pinfo, 0, sizeof(dest.pinfo));
-    }
-    else {
-      if (!dest.pinfo[White].pawns) {
-        assert(!dest.pinfo[White].atks);
-        assert(!dest.pinfo[White].backward);
-        assert(!dest.pinfo[White].connected);
-        assert(!dest.pinfo[White].passed);
-        assert(!dest.pinfo[White].closed);
-        assert(!dest.pinfo[White].behind);
-        assert(!dest.pinfo[White].front);
-        assert(!dest.pinfo[White].score);
-        assert(!dest.pinfo[White].count);
-      }
-      if (!dest.pinfo[Black].pawns) {
-        assert(!dest.pinfo[Black].atks);
-        assert(!dest.pinfo[Black].backward);
-        assert(!dest.pinfo[Black].connected);
-        assert(!dest.pinfo[Black].passed);
-        assert(!dest.pinfo[Black].closed);
-        assert(!dest.pinfo[Black].behind);
-        assert(!dest.pinfo[Black].front);
-        assert(!dest.pinfo[Black].score);
-        assert(!dest.pinfo[Black].count);
-      }
-    }
-
     dest.Evaluate();
   }
 
@@ -2530,39 +2475,6 @@ private:
     dest.kdiags[White]   = kdiags[White];
     dest.kdiags[Black]   = kdiags[Black];
     dest.chkrs           = 0ULL;
-
-    // reset pawn info structs?
-    if ((dest.pinfo[White].pawns != dest.pc[WhitePawn]) ||
-        (dest.pinfo[Black].pawns != dest.pc[BlackPawn]))
-    {
-      memset(dest.pinfo, 0, sizeof(dest.pinfo));
-    }
-#ifndef NDEBUG
-    else {
-      if (!dest.pinfo[White].pawns) {
-        assert(!dest.pinfo[White].atks);
-        assert(!dest.pinfo[White].backward);
-        assert(!dest.pinfo[White].connected);
-        assert(!dest.pinfo[White].passed);
-        assert(!dest.pinfo[White].closed);
-        assert(!dest.pinfo[White].behind);
-        assert(!dest.pinfo[White].front);
-        assert(!dest.pinfo[White].score);
-        assert(!dest.pinfo[White].count);
-      }
-      if (!dest.pinfo[Black].pawns) {
-        assert(!dest.pinfo[Black].atks);
-        assert(!dest.pinfo[Black].backward);
-        assert(!dest.pinfo[Black].connected);
-        assert(!dest.pinfo[Black].passed);
-        assert(!dest.pinfo[Black].closed);
-        assert(!dest.pinfo[Black].behind);
-        assert(!dest.pinfo[Black].front);
-        assert(!dest.pinfo[Black].score);
-        assert(!dest.pinfo[Black].count);
-      }
-    }
-#endif
 
     dest.Evaluate();
   }
@@ -4113,12 +4025,6 @@ private:
       default:
         assert(false);
       }
-
-      // stand pat if best move is non-volatile
-      if (!check && !firstMove.IsCapOrPromo()) {
-        assert(!pvCount);
-        return standPat;
-      }
     }
 
     // search firstMove if we have it
@@ -4126,6 +4032,12 @@ private:
     if (firstMove.IsValid()) {
       _stats.qexecs++;
       Exec<color>(firstMove, *child);
+      if (!check && !firstMove.IsValid() && !child->InCheck()) {
+        // stand pat if best move is non-volatile
+        Undo<color>(firstMove);
+        firstMove.Clear();
+        return standPat;
+      }
       firstMove.Score() = -child->QSearch<!color>(-beta, -alpha, (depth - 1));
       Undo<color>(firstMove);
       if (_stop) {
@@ -4211,7 +4123,9 @@ private:
       if (pvCount > 0) {
         if (alpha > orig_alpha) {
           assert(pv[0].GetScore() == alpha);
-          _tt.Store(positionKey, pv[0], 0, HashEntry::ExactScore, 0);
+          assert(beta > (orig_alpha + 1));
+          _tt.Store(positionKey, pv[0], 0, HashEntry::ExactScore,
+              HashEntry::FromPV);
         }
         else {
           assert(alpha == orig_alpha);
@@ -4232,15 +4146,19 @@ private:
     assert(abs(alpha) <= Infinity);
     assert(abs(beta) <= Infinity);
     assert(depth > 0);
+    assert(depthChange <= 1);
+    assert((depth + depthChange) > 0);
 
     _stats.snodes++;
-    extended = 0;
-    reduced  = 0;
-    pvCount  = 0;
+    pvCount = 0;
 
     if (IsDraw()) {
       return _drawScore[color];
     }
+
+    uint64_t tmp;
+    int searchDepth;
+    int eval;
 
     // mate distance pruning
     int best = (ply - Infinity);
@@ -4251,51 +4169,49 @@ private:
       alpha = best;
     }
 
-    // extend depth if in check and previous ply not extended
+    depth += depthChange;
+
+    // check extensions
     const bool check = InCheck();
-    if (_ext && check && !parent->extended) {
-      assert(!parent->reduced);
+    if (_ext && check && (depthChange <= 0) && (parent->depthChange <= 0)) {
       if (MULTI_BIT(chkrs)) {
         _stats.chkExts++;
-        extended++;
+        depthChange++;
         depth++;
       }
       else {
-        uint64_t dests = (atks[color|King] & ~atks[!color] & ~pc[color]);
-        if (dests) {
+        tmp = (atks[color|King] & ~atks[!color] & ~pc[color]);
+        if (tmp) {
           const int from = LowSquare(chkrs);
           switch (_diff.Dir(from, king[color])) {
-          case SouthWest: dests &= ~_SOUTH_WEST[from]; break;
-          case South:     dests &= ~_SOUTH[from];      break;
-          case SouthEast: dests &= ~_SOUTH_EAST[from]; break;
-          case West:      dests &= ~_WEST[from];       break;
-          case East:      dests &= ~_EAST[from];       break;
-          case NorthWest: dests &= ~_NORTH_WEST[from]; break;
-          case North:     dests &= ~_NORTH[from];      break;
-          case NorthEast: dests &= ~_NORTH_EAST[from]; break;
+          case SouthWest: tmp &= ~_SOUTH_WEST[from]; break;
+          case South:     tmp &= ~_SOUTH[from];      break;
+          case SouthEast: tmp &= ~_SOUTH_EAST[from]; break;
+          case West:      tmp &= ~_WEST[from];       break;
+          case East:      tmp &= ~_EAST[from];       break;
+          case NorthWest: tmp &= ~_NORTH_WEST[from]; break;
+          case North:     tmp &= ~_NORTH[from];      break;
+          case NorthEast: tmp &= ~_NORTH_EAST[from]; break;
           default:
             break;
           }
         }
-        if (!MULTI_BIT(dests)) {
+        if (!MULTI_BIT(tmp)) {
           _stats.chkExts++;
-          extended++;
+          depthChange++;
           depth++;
         }
       }
     }
 
     // extend depth if we are facing a new threat
-    if ((_test & 4) && !extended && !parent->extended &&
+    if ((_test & 8) && (depthChange <= 0) && (parent->depthChange <= 0) &&
         (state & (color ? WhiteThreat : BlackThreat)) &&
         !(parent->state & (color ? WhiteThreat : BlackThreat)))
     {
       _stats.threatExts++;
-      extended++;
+      depthChange++;
       depth++;
-      if (parent->reduced) {
-        parent->reduced--;
-      }
     }
 
     // do we have anything for this position in the transposition table?
@@ -4322,6 +4238,7 @@ private:
         break;
       case HashEntry::ExactScore:
         firstMove.Init(entry->moveBits, entry->score);
+        assert(entry->HasPvFlag());
         assert(ValidateMove<color>(firstMove) == 0);
         if (entry->depth >= depth) {
           pv[0] = firstMove;
@@ -4354,22 +4271,20 @@ private:
       default:
         assert(false);
       }
-      if (entry->HasExtendedFlag() && !extended && !parent->extended) {
+      if (entry->HasExtendedFlag() && (depthChange <= 0) &&
+          (parent->depthChange <= 0))
+      {
         _stats.hashExts++;
-        extended++;
+        depthChange++;
         depth++;
-        if (parent->reduced) {
-          parent->reduced--;
-        }
       }
     }
 
     // razoring
     // if we're well below alpha and q-search doesn't show a saving tactic
     // return q-search result
-    int eval;
-    if (_rzr && !check && !pvNode && !firstMove.IsValid() && (depth <= 2) &&
-        (abs(alpha) < WinningScore) &&
+    if (_rzr && !check && !pvNode && (depthChange <= 0) && (depth < 3) &&
+        !firstMove.IsValid() && (alpha < WinningScore) &&
         ((standPat + _rzr + (64 * (depth - 1))) < alpha))
     {
       _stats.rzrCount++;
@@ -4383,39 +4298,60 @@ private:
       }
     }
 
-    // null move pruning
-    // if we can get a score >= beta without even making a move, return beta
-    if (_nmp && nullMoveOk && !check && !pvNode && (depth > 1) && !extended &&
-        (standPat >= beta) && (abs(beta) < WinningScore) &&
-        MajorsAndMinors<color>())
+    // null move heuristics
+    if (_nmp && nullMoveOk && !check && !pvNode && (depth > 1) &&
+        (depthChange <= 0) && (abs(beta) < WinningScore) &&
+        (tmp = MajorsAndMinors<color>()) &&
+        (MULTI_BIT(tmp) || (BitCount(pc[color]) > 3)))
     {
       assert((alpha + 1) == beta);
-      ExecNullMove<color>(*child);
-      child->nullMoveOk = 0;
-      int rdepth = std::max<int>(0, (depth - 3));
-      if (rdepth > 3) {
-        eval = -child->QSearch<!color>(-beta, -alpha, 0);
+      // stand pat if we can get a score >= beta without even making a move
+      if (standPat >= beta) {
+        ExecNullMove<color>(*child);
+        child->depthChange = 0;
+        child->nullMoveOk = 0;
+        searchDepth = (depth - 3 - (depth / 6) - ((standPat - beta) >= 400));
+        eval = (searchDepth > 0)
+            ? -child->Search<!color>(-beta, -alpha, searchDepth, false)
+            : -child->QSearch<!color>(-beta, -alpha, 0);
         if (_stop) {
           return beta;
         }
         if (eval >= beta) {
-          _stats.nmThreats++;
-          rdepth--;
+          // TODO do verification search if depth reduction > 4
+          _stats.nmCutoffs++;
+          pvCount = 0;
+          return standPat; // do not return eval
         }
       }
-      eval = (rdepth > 0)
-          ? -child->Search<!color>(-beta, -alpha, rdepth, false)
-          : -child->QSearch<!color>(-beta, -alpha, 0);
-      if (_stop) {
-        return beta;
+      else if ((_test & 1) && cutNode && (depth > 2)) {
+        ExecNullMove<color>(*child);
+        eval = -child->QSearch<!color>(-standPat, (1 - standPat), 0);
+        if (_stop) {
+          return beta;
+        }
+        if (cutNode && (eval >= standPat)) {
+          // very quiet position, don't waste a lot of time on this one
+          _stats.lmDoubleRed++;
+          depthChange--;
+          depth--;
+        }
       }
-      if (eval >= beta) {
-        // TODO do verification search at high depths
-        pvCount = 0;
-        _stats.nmCutoffs++;
-        return standPat; // do not return eval
+      else {
+        eval = standPat;
+        assert(eval > -WinningScore);
+      }
+      if ((_test & 2) && child->pvCount && (eval <= -WinningScore) &&
+          (depthChange <= 0) && (parent->depthChange <= 0) &&
+          LastMoveEnabledPV(*child))
+      {
+        // parent move poses a threat, extend depth
+        _stats.nmThreats++;
+        depthChange++;
+        depth++;
       }
     }
+    nullMoveOk = 0;
 
     // internal iterative deepening if no firstMove in transposition table
     if (_iid && !check && !firstMove.IsValid() && (beta < Infinity) &&
@@ -4423,13 +4359,10 @@ private:
     {
       assert(!pvCount);
       _stats.iidCount++;
-      nullMoveOk = 0;
-      eval = Search<color>((beta - 1), beta, (depth - (pvNode ? 2 : 4)), true);
+      searchDepth = (depth - depthChange - (pvNode ? 2 : 4));
+      eval = Search<color>((beta - 1), beta, searchDepth, true);
       if (_stop || !pvCount) {
         return eval;
-      }
-      if (eval >= beta) {
-        _stats.iidBeta++;
       }
       assert(pv[0].IsValid());
       firstMove = pv[0];
@@ -4449,55 +4382,53 @@ private:
         return _drawScore[color];
       }
       firstMove = (*move);
-      if (_oneReply && (moveCount == 1) && !extended) {
+      if (_oneReply && (moveCount == 1) && (depthChange <= 0) &&
+          (parent->depthChange <= 0))
+      {
         _stats.oneReplyExts++;
-        extended++;
+        depthChange++;
         depth++;
-        if (parent->reduced) {
-          parent->reduced--;
-        }
       }
     }
 
     // search first move with full alpha/beta window
+    assert(depth > 0);
     const int orig_alpha = alpha;
     Exec<color>(firstMove, *child);
+    child->depthChange = 0;
     child->nullMoveOk = 1;
-    reduced = 0;
     eval = (depth > 1)
         ? -child->Search<!color>(-beta, -alpha, (depth - 1), !cutNode)
         : -child->QSearch<!color>(-beta, -alpha, 0);
     Undo<color>(firstMove);
+    assert(!pvNode || (child->depthChange >= 0));
+    assert((depth + child->depthChange) >= 0);
     if (_stop) {
       return beta;
     }
+    int pvDepth = (depth + ((child->depthChange < 0) ? child->depthChange : 0));
+    best = eval;
+    UpdatePV(firstMove);
     if (eval > alpha) {
       alpha = eval;
-    }
-    if (eval >= best) {
-      best = eval;
-      UpdatePV(firstMove);
-      if (eval >= beta) {
-        if (!firstMove.IsCapOrPromo()) {
-          IncHistory(firstMove, check, depth);
-          AddKiller(firstMove);
-        }
-        firstMove.Score() = beta;
-        _tt.Store(positionKey, firstMove, depth, HashEntry::LowerBound,
-                  ((extended ? HashEntry::Extended : 0) |
-                   (pvNode ? HashEntry::FromPV : 0)));
-        return best;
-      }
     }
     else if (!firstMove.IsCapOrPromo()) {
       DecHistory(firstMove, check);
     }
-
-    bool lmr_ok = (_lmr && !pvNode && !check && (depth > (_lmr + 1)));
-    int pvDepth = depth;
-    int newDepth;
+    if (eval >= beta) {
+      if (!firstMove.IsCapOrPromo()) {
+        IncHistory(firstMove, check, pvDepth);
+        AddKiller(firstMove);
+      }
+      firstMove.Score() = beta;
+      _tt.Store(positionKey, firstMove, pvDepth, HashEntry::LowerBound,
+                (((depthChange > 0) ? HashEntry::Extended : 0) |
+                 (pvNode ? HashEntry::FromPV : 0)));
+      return best;
+    }
 
     // search remaining moves
+    const bool lmr_ok = (_lmr && !pvNode && !check && (depth > (_lmr + 1)));
     while ((move = GetNextMove<color, AllMoves>(depth))) {
       if (firstMove == (*move)) {
         assert(firstMove.IsValid());
@@ -4508,39 +4439,32 @@ private:
 
       // late move reductions
       _stats.lateMoves++;
-      _stats.lmCandidates += lmr_ok;
+      if (lmr_ok) _stats.lmCandidates++;
       if (lmr_ok &&
           !move->IsCapOrPromo() &&
           !child->InCheck() &&
           !IsKiller(*move) &&
-          !((move->GetPc() == (color|Pawn)) &&
-            (YC(move->GetTo()) == (color ? 1 : 6))) &&
           (_hist[move->GetHistoryIndex()] < 0))
       {
         _stats.lmReductions++;
-        reduced = _lmr;
-        if (depth > (reduced + 1)) {
-          _stats.lmDoubleRed++;
-          reduced++;
-        }
+        child->depthChange = -(_lmr + cutNode);
       }
       else {
-        reduced = 0;
+        child->depthChange = 0;
       }
 
       // first search with a null window to quickly see if it improves alpha
-      newDepth = (depth - 1 - reduced);
       child->nullMoveOk = 1;
-      eval = (newDepth > 0)
-          ? -child->Search<!color>(-(alpha + 1), -alpha, newDepth, true)
+      eval = (depth > 1)
+          ? -child->Search<!color>(-(alpha + 1), -alpha, (depth - 1), true)
           : -child->QSearch<!color>(-(alpha + 1), -alpha, 0);
 
       // re-search at full depth?
-      if (!_stop && reduced && (eval > alpha)) {
+      if (!_stop && (child->depthChange < 0) && (eval > alpha)) {
         assert(depth > 1);
         _stats.lmResearches++;
         child->nullMoveOk = 0;
-        reduced = 0;
+        child->depthChange = 0;
         eval = -child->Search<!color>(-(alpha + 1), -alpha, (depth - 1), false);
         if (!_stop && (eval > alpha)) {
           _stats.lmConfirmed++;
@@ -4549,7 +4473,7 @@ private:
 
       // re-search with full window?
       if (!_stop && pvNode && (eval > alpha)) {
-        assert(!reduced);
+        assert(child->depthChange >= 0);
         child->nullMoveOk = 0;
         eval = (depth > 1)
             ? -child->Search<!color>(-beta, -alpha, (depth - 1), false)
@@ -4563,11 +4487,16 @@ private:
       if (eval > alpha) {
         alpha = eval;
         _stats.lmAlphaIncs++;
+        assert(child->depthChange >= 0);
+      }
+      else if (!move->IsCapOrPromo()) {
+        DecHistory(*move, check);
       }
       if (eval > best) {
         best = eval;
         UpdatePV(*move);
-        pvDepth = (depth - reduced);
+        assert((depth + child->depthChange) >= 0);
+        pvDepth = (depth + ((child->depthChange < 0) ? child->depthChange : 0));
         if (eval >= beta) {
           if (!move->IsCapOrPromo()) {
             IncHistory(*move, check, pvDepth);
@@ -4575,13 +4504,10 @@ private:
           }
           move->Score() = beta;
           _tt.Store(positionKey, *move, pvDepth, HashEntry::LowerBound,
-                    ((extended ? HashEntry::Extended : 0) |
+                    (((depthChange > 0) ? HashEntry::Extended : 0) |
                      (pvNode ? HashEntry::FromPV : 0)));
           return best;
         }
-      }
-      else if (!move->IsCapOrPromo()) {
-        DecHistory(*move, check);
       }
     }
 
@@ -4592,17 +4518,18 @@ private:
     if (pvCount > 0) {
       pv[0].Score() = alpha;
       if (alpha > orig_alpha) {
+        assert(pvNode);
         if (!pv[0].IsCapOrPromo()) {
           IncHistory(pv[0], check, pvDepth);
         }
         _tt.Store(positionKey, pv[0], pvDepth, HashEntry::ExactScore,
-            ((extended ? HashEntry::Extended : 0) |
-             (pvNode ? HashEntry::FromPV : 0)));
+            (((depthChange > 0) ? HashEntry::Extended : 0) |
+             HashEntry::FromPV));
       }
       else {
         assert(alpha == orig_alpha);
         _tt.Store(positionKey, pv[0], pvDepth, HashEntry::UpperBound,
-            ((extended ? HashEntry::Extended : 0) |
+            (((depthChange > 0) ? HashEntry::Extended : 0) |
              (pvNode ? HashEntry::FromPV : 0)));
       }
     }
@@ -4618,8 +4545,8 @@ private:
     assert(!parent);
     assert(child == _node);
 
-    extended = 0;
-    reduced = 0;
+    depthChange = 0;
+    nullMoveOk  = 0;
 
     if (_debug) {
       PrintBoard();
@@ -4678,7 +4605,6 @@ private:
     // iterative deepening
     for (int d = 0; !_stop && (d < depth); ++d) {
       _seldepth = _depth = (d + 1);
-      child->nullMoveOk = (d > 0);
 
       showPV = true;
       delta  = 25;
@@ -4692,8 +4618,10 @@ private:
 
         // aspiration window search
         VerifySliderMaps();
+        child->nullMoveOk = 1;
         Exec<color>(*move, *child);
         while (!_stop) {
+          child->depthChange = 0;
           move->Score() = (_depth > 1)
               ? -child->Search<!color>(-beta, -alpha, (_depth - 1), false)
               : -child->QSearch<!color>(-beta, -alpha, 0);
@@ -4726,6 +4654,7 @@ private:
 
         // do we have a new principal variation?
         if (!_stop && ((_movenum == 1) || (move->GetScore() > best))) {
+          assert(child->depthChange >= 0);
           UpdatePV(*move);
           OutputPV(move->GetScore());
           showPV = false;

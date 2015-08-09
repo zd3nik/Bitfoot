@@ -154,7 +154,7 @@ void Stats::Print() {
     Output() << lmCandidates << " lmr candidates ("
              << Percent(lmCandidates, lateMoves) << "%), "
              << lmReductions << " reduced ("
-             << Percent(lmReductions, lateMoves) << "%), "
+             << Percent(lmReductions, lmCandidates) << "%), "
              << lmDoubleRed << " double ("
              << Percent(lmDoubleRed, lmReductions) << "%)";
     Output() << lmResearches << " lmr alpha increases ("

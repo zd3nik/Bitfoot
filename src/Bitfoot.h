@@ -4447,7 +4447,12 @@ private:
           (_hist[move->GetHistoryIndex()] < 0))
       {
         _stats.lmReductions++;
-        child->depthChange = -(_lmr + cutNode);
+        if ((depth > (_lmr + 2)) || (-child->standPat <= alpha)) {
+          child->depthChange = -(_lmr + 1);
+        }
+        else {
+          child->depthChange = -_lmr;
+        }
       }
       else {
         child->depthChange = 0;
@@ -4455,7 +4460,7 @@ private:
 
       // first search with a null window to quickly see if it improves alpha
       child->nullMoveOk = 1;
-      eval = (depth > 1)
+      eval = ((depth + child->depthChange - 1) > 0)
           ? -child->Search<!color>(-(alpha + 1), -alpha, (depth - 1), true)
           : -child->QSearch<!color>(-(alpha + 1), -alpha, 0);
 
@@ -4596,6 +4601,7 @@ private:
     }
 
     Move* move;
+    bool  newPV = true;
     bool  showPV = true;
     int   alpha;
     int   best = standPat;
@@ -4606,60 +4612,83 @@ private:
     for (int d = 0; !_stop && (d < depth); ++d) {
       _seldepth = _depth = (d + 1);
 
-      showPV = true;
-      delta  = 25;
-      alpha  = std::max<int>((best - delta), -Infinity);
-      beta   = std::min<int>((best + delta), +Infinity);
+      newPV = true;
+      delta = 25;
+      alpha = std::max<int>((best - delta), -Infinity);
+      beta  = std::min<int>((best + delta), +Infinity);
 
       for (moveIndex = 0; !_stop && (moveIndex < moveCount); ++moveIndex) {
         move      = (moves + moveIndex);
         _currmove = move->ToString();
         _movenum  = (moveIndex + 1);
 
-        // aspiration window search
-        VerifySliderMaps();
+#ifndef NDEBUG
+        VerifyPosition();
+#endif
+
+        child->depthChange = 0;
         child->nullMoveOk = 1;
         Exec<color>(*move, *child);
-        while (!_stop) {
-          child->depthChange = 0;
-          move->Score() = (_depth > 1)
-              ? -child->Search<!color>(-beta, -alpha, (_depth - 1), false)
-              : -child->QSearch<!color>(-beta, -alpha, 0);
+        move->Score() = (_depth > 1)
+            ? -child->Search<!color>(-beta, -alpha, (_depth - 1), false)
+            : -child->QSearch<!color>(-beta, -alpha, 0);
+        assert(move->GetScore() > -Infinity);
+        assert(move->GetScore() < Infinity);
+        if (_stop) {
+          Undo<color>(*move);
+          break;
+        }
 
-          // expand aspiration window and re-search?
-          if (!_stop && ((move->GetScore() >= beta) ||
-                         ((move->GetScore() <= alpha) && (_movenum == 1))))
-          {
-            delta *= 20;
+        // re-search to get real score?
+        if ((move->GetScore() >= beta) ||
+            ((move->GetScore() <= alpha) && (_movenum == 1)))
+        {
+          newPV = true;
+          delta = 25;
+          do {
             if (move->GetScore() >= beta) {
-              assert(move->GetScore() < Infinity);
-              beta = std::min<int>((move->GetScore() + delta), Infinity);
-              if ((senjo::Now() - _startTime) > 1000) {
-                OutputPV(move->GetScore(), 1); // report lowerbound
-              }
+              OutputPV(move->GetScore(), 1); // report lowerbound
+              delta = std::max<int>((delta * 3), (move->GetScore() - beta + 1));
+              beta = std::min<int>(Infinity, (move->GetScore() + delta));
+              alpha = (move->GetScore() - 1);
             }
             else {
-              assert(move->GetScore() > -Infinity);
-              alpha = std::max<int>((move->GetScore() - delta), -Infinity);
-              if ((senjo::Now() - _startTime) > 1000) {
-                OutputPV(move->GetScore(), -1); // report upperbound
-              }
+              assert(move->GetScore() <= alpha);
+              OutputPV(move->GetScore(), -1); // report upperbound
+              delta = std::max<int>((delta * 3), (alpha - move->GetScore() + 1));
+              alpha = std::max<int>(-Infinity, (move->GetScore() - delta));
+              beta = (move->GetScore() + 1);
             }
-            continue;
-          }
-          delta = 25;
-          break;
+            child->depthChange = 0;
+            child->nullMoveOk = 0;
+            move->Score() = (_depth > 1)
+                ? -child->Search<!color>(-beta, -alpha, (_depth - 1), false)
+                : -child->QSearch<!color>(-beta, -alpha, 0);
+            assert(move->GetScore() > -Infinity);
+            assert(move->GetScore() < Infinity);
+            if (_stop) {
+              break;
+            }
+            if ((_movenum > 1) && (move->GetScore() <= best)) {
+              newPV = false;
+              break;
+            }
+          } while ((move->GetScore() <= alpha) || (move->GetScore() >= beta));
         }
         Undo<color>(*move);
 
         // do we have a new principal variation?
-        if (!_stop && ((_movenum == 1) || (move->GetScore() > best))) {
-          assert(child->depthChange >= 0);
-          UpdatePV(*move);
-          OutputPV(move->GetScore());
+        if (newPV) {
+          newPV = false;
           showPV = false;
-          _tt.Store(positionKey, *move, _depth, HashEntry::ExactScore,
-                    HashEntry::FromPV);
+          UpdatePV(*move);
+          if (!_stop &&
+              (move->GetScore() > alpha) && (move->GetScore() < beta))
+          {
+            OutputPV(move->GetScore());
+            _tt.Store(positionKey, *move, _depth, HashEntry::ExactScore,
+                      HashEntry::FromPV);
+          }
 
           // set null aspiration window now that we have a principal variation
           best = alpha = move->GetScore();

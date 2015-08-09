@@ -3973,17 +3973,8 @@ private:
       return _drawScore[color];
     }
 
-    // mate distance pruning and standPat beta cutoff when not in check
-    const bool check = InCheck();
-    int best = (check ? (ply - Infinity) : standPat);
-    if ((best >= beta) || !child) {
-      return best;
-    }
-    if (best > alpha) {
-      alpha = best;
-    }
-
     // do we have anything for this position in the transposition table?
+    const bool check = InCheck();
     Move firstMove;
     HashEntry* entry = _tt.Probe(positionKey);
     if (entry) {
@@ -4025,6 +4016,15 @@ private:
       default:
         assert(false);
       }
+    }
+
+    // mate distance pruning and standPat beta cutoff when not in check
+    int best = (check ? (ply - Infinity) : standPat);
+    if ((best >= beta) || !child) {
+      return best;
+    }
+    if (best > alpha) {
+      alpha = best;
     }
 
     // search firstMove if we have it
@@ -4643,20 +4643,26 @@ private:
         if ((move->GetScore() >= beta) ||
             ((move->GetScore() <= alpha) && (_movenum == 1)))
         {
+          int bound[2] = { -Infinity, Infinity };
           newPV = true;
           delta = 25;
           do {
             if (move->GetScore() >= beta) {
               OutputPV(move->GetScore(), 1); // report lowerbound
-              delta = std::max<int>((delta * 3), (move->GetScore() - beta + 1));
+              delta = std::max<int>((delta * 3), (move->GetScore() - beta));
               beta = std::min<int>(Infinity, (move->GetScore() + delta));
               alpha = (move->GetScore() - 1);
             }
             else {
               assert(move->GetScore() <= alpha);
               OutputPV(move->GetScore(), -1); // report upperbound
-              delta = std::max<int>((delta * 3), (alpha - move->GetScore() + 1));
-              alpha = std::max<int>(-Infinity, (move->GetScore() - delta));
+              delta = std::max<int>((delta * 3), (alpha - move->GetScore()));
+              if (_movenum == 1) {
+                alpha = std::max<int>(-Infinity, (move->GetScore() - delta));
+              }
+              else {
+                alpha = std::max<int>(best, (move->GetScore() - delta));
+              }
               beta = (move->GetScore() + 1);
             }
             child->depthChange = 0;
@@ -4671,6 +4677,18 @@ private:
             }
             if ((_movenum > 1) && (move->GetScore() <= best)) {
               newPV = false;
+              break;
+            }
+            if (move->GetScore() > bound[0]) {
+              bound[0] = move->GetScore();
+            }
+            else if (move->GetScore() < bound[1]) {
+              bound[1] = move->GetScore();
+            }
+            else {
+              // TODO increase time
+              senjo::Output() << "UNSTABLE(" << move->GetScore() << ", "
+                              << bound[0] << ", " << bound[1] << ")";
               break;
             }
           } while ((move->GetScore() <= alpha) || (move->GetScore() >= beta));

@@ -1888,32 +1888,63 @@ private:
       eval = std::max<int>(-24, (eval / 6));
     }
 
-    // reduce winning score if opposite color bishop ending
-    else if (SINGLE_BIT(whitePcs) && SINGLE_BIT(blackPcs) &&
-             (whitePcs == pc[WhiteBishop]) && (blackPcs == pc[BlackBishop]) &&
-             (!(whitePcs & _LIGHT) != !(blackPcs & _LIGHT)))
-    {
-      eval /= 4;
+    // bonus if opponent can't win and we're not in a clearly worse position
+    else if (!blackCanWin && (eval > -24)) {
+      eval += 50;
     }
+    else if (!whiteCanWin && (eval < 24)) {
+      eval -= 50;
+    }
+
     else if (!pc[WhitePawn] && !pc[BlackPawn]) {
-      // reduce winning score if R vs N|B|Q ending
-      if (SINGLE_BIT(whitePcs) && SINGLE_BIT(blackPcs) &&
-          ((whitePcs == pc[WhiteRook]) ^ (blackPcs == pc[BlackRook])))
+      // reduce winning score if R vs minor(s)
+      if (SINGLE_BIT(whitePcs) && (whitePcs == pc[WhiteRook]) &&
+          (blackPcs == MinorPieces<Black>()) && (BitCount(blackPcs) <= 2))
       {
-        eval /= 4;
+        eval -= (eval / 6);
+      }
+      else if (SINGLE_BIT(blackPcs) && (blackPcs == pc[BlackRook]) &&
+               (whitePcs == MinorPieces<White>()) && (BitCount(whitePcs) <= 2))
+      {
+        eval -= (eval / 6);
       }
 
-      // reduce winning score if R vs BB
-      else if ((whitePcs == pc[WhiteRook]) && (blackPcs == pc[BlackBishop]) &&
-               SINGLE_BIT(whitePcs) && (BitCount(blackPcs) == 2))
+      // reduce winning score if Q vs R
+      else if (SINGLE_BIT(whitePcs) && (whitePcs == pc[WhiteQueen]) &&
+               SINGLE_BIT(blackPcs) && (blackPcs == pc[BlackRook]))
       {
-        eval /= 5;
+        eval -= (eval / 6);
       }
-      else if ((blackPcs == pc[BlackRook]) && (whitePcs == pc[WhiteBishop]) &&
-               SINGLE_BIT(blackPcs) && (BitCount(whitePcs) == 2))
+      else if (SINGLE_BIT(whitePcs) && (whitePcs == pc[WhiteRook]) &&
+               SINGLE_BIT(blackPcs) && (blackPcs == pc[BlackQueen]))
       {
-        eval /= 5;
+        eval -= (eval / 6);
       }
+    }
+
+    // reduce winning score if pawns + R vs R ending
+//    else if ((whitePcs == pc[WhiteRook]) && (blackPcs == pc[BlackRook]) &&
+//             (BitCount(whitePcs) == BitCount(blackPcs)) &&
+//             (abs(eval) < 256))
+//    {
+//      int t = (eval / 16);
+//      t *= t;
+//      assert(t >= 0);
+//      assert(t <= abs(eval));
+//      eval = ((eval > 0) ? t : -t);
+//    }
+
+    // reduce winning score if pawns + opposite color bishop ending
+    else if (SINGLE_BIT(whitePcs) && SINGLE_BIT(blackPcs) &&
+             (whitePcs == pc[WhiteBishop]) && (blackPcs == pc[BlackBishop]) &&
+             (!(whitePcs & _LIGHT) != !(blackPcs & _LIGHT)) &&
+             (abs(eval) < 256))
+    {
+      int t = (eval / 16);
+      t *= t;
+      assert(t >= 0);
+      assert(t <= abs(eval));
+      eval = ((eval > 0) ? t : -t);
     }
 
     // reduce winning score if P vs N|B, e.g. 8/6b1/6P1/8/4k3/6Kp/8/8 w - -
@@ -1921,21 +1952,13 @@ private:
              !pc[WhitePawn] && SINGLE_BIT(whitePcs) &&
              (whitePcs == MinorPieces<White>()))
     {
-      eval /= 4;
+      eval -= (eval / 3);
     }
     else if (!whitePcs && SINGLE_BIT(pc[WhitePawn]) &&
              !pc[BlackPawn] && SINGLE_BIT(blackPcs) &&
              (blackPcs == MinorPieces<Black>()))
     {
-      eval /= 4;
-    }
-
-    // bonus if opponent can't win and we're not in a clearly worse position
-    else if (!blackCanWin && (eval > -24)) {
-      eval += 150;
-    }
-    else if (!whiteCanWin && (eval < 24)) {
-      eval -= 150;
+      eval -= (eval / 3);
     }
 
     // reduce winning score if rcount is getting large
@@ -1944,9 +1967,6 @@ private:
     if ((rcount > 25) && (abs(eval) > 8)) {
       eval = static_cast<int>(eval * (25.0 / rcount));
     }
-
-    // round score to multiple of 8
-//    eval = ((eval / 8) * 8);
 
     // standPat is just eval from persepctive of the side to move
     standPat = (ColorToMove() ? -eval : eval);

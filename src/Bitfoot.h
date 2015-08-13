@@ -226,6 +226,11 @@ private:
   }
 
   //--------------------------------------------------------------------------
+  inline int RazorDelta(const int depth) const {
+    return (_rzr + (64 * depth));
+  }
+
+  //--------------------------------------------------------------------------
   inline int SquareValue(const int piece, const int sqr) const {
     assert(IS_PIECE(piece));
     assert(IS_SQUARE(sqr));
@@ -3977,7 +3982,7 @@ private:
 
   //--------------------------------------------------------------------------
   template<Color color>
-  int QSearch(int alpha, const int beta, const int depth) {
+  int QSearch(int alpha, int beta, const int depth) {
     assert(alpha < beta);
     assert(abs(alpha) <= Infinity);
     assert(abs(beta) <= Infinity);
@@ -4040,11 +4045,10 @@ private:
 
     // mate distance pruning and standPat beta cutoff when not in check
     int best = (check ? (ply - Infinity) : standPat);
-    if ((best >= beta) || !child) {
-      return best;
-    }
-    if (best > alpha) {
-      alpha = best;
+    alpha = std::max<int>(best, alpha);
+    beta = std::min<int>((Infinity - ply + 1), beta);
+    if ((alpha >= beta) || !child) {
+      return alpha;
     }
 
     // search firstMove if we have it
@@ -4160,14 +4164,21 @@ private:
   }
 
   //--------------------------------------------------------------------------
-  template<Color color>
-  int Search(int alpha, const int beta, int depth, const bool cutNode) {
+  enum NodeType {
+    PvNode,
+    NonPv
+  };
+
+  //--------------------------------------------------------------------------
+  template<NodeType type, Color color>
+  int Search(int alpha, int beta, int depth, const bool cutNode) {
     assert(alpha < beta);
     assert(abs(alpha) <= Infinity);
     assert(abs(beta) <= Infinity);
     assert(depth > 0);
     assert(depthChange <= 1);
     assert((depth + depthChange) > 0);
+    assert((type == PvNode) || ((alpha + 1) == beta));
 
     _stats.snodes++;
     pvCount = 0;
@@ -4182,11 +4193,10 @@ private:
 
     // mate distance pruning
     int best = (ply - Infinity);
-    if ((best >= beta) || !child) {
-      return best;
-    }
-    if (best > alpha) {
-      alpha = best;
+    alpha = std::max<int>(best, alpha);
+    beta = std::min<int>((Infinity - ply + 1), beta);
+    if ((alpha >= beta) || !child) {
+      return alpha;
     }
 
     depth += depthChange;
@@ -4235,9 +4245,10 @@ private:
     }
 
     // do we have anything for this position in the transposition table?
-    const bool pvNode = ((alpha + 1) < beta);
+    const bool pvNode = (type == PvNode);
     HashEntry* entry = _tt.Probe(positionKey);
     Move firstMove;
+    eval = standPat;
     if (entry) {
       switch (entry->GetPrimaryFlag()) {
       case HashEntry::Checkmate: return (ply - Infinity);
@@ -4252,8 +4263,8 @@ private:
           pvCount = 1;
           return entry->score;
         }
-        if ((entry->depth >= (depth - 3)) && (entry->score < beta)) {
-          nullMoveOk = 0;
+        if ((entry->depth >= (depth - 3)) && (entry->score < eval)) {
+          eval = entry->score;
         }
         break;
       case HashEntry::ExactScore:
@@ -4269,8 +4280,8 @@ private:
           }
           return entry->score;
         }
-        if ((entry->depth >= (depth - 3)) && (entry->score < beta)) {
-          nullMoveOk = 0;
+        if (entry->depth >= (depth - 3)) {
+          eval = entry->score;
         }
         break;
       case HashEntry::LowerBound:
@@ -4286,6 +4297,9 @@ private:
             AddKiller(firstMove);
           }
           return entry->score;
+        }
+        if ((entry->depth >= (depth - 3)) && (entry->score > eval)) {
+          eval = entry->score;
         }
         break;
       default:
@@ -4303,18 +4317,24 @@ private:
     // razoring
     // if we're well below alpha and q-search doesn't show a saving tactic
     // return q-search result
-    if (_rzr && !check && !pvNode && (depthChange <= 0) && (depth < 3) &&
-        !firstMove.IsValid() && (alpha < WinningScore) &&
-        ((standPat + _rzr + (64 * (depth - 1))) < alpha))
+    if (_rzr && !check && !pvNode && nullMoveOk && (depth < 4) &&
+        (depthChange <= 0) && !firstMove.IsValid() && (alpha < WinningScore) &&
+        !(pinfo[color].passed & _RANK[color ? 1 : 6]) &&
+        ((eval + RazorDelta(depth)) <= alpha))
     {
       _stats.rzrCount++;
-      eval = QSearch<color>(alpha, beta, 0);
+      if ((depth <= 1) && ((standPat + RazorDelta(3 * depth)) <= alpha)) {
+        _stats.iidBeta++; // TODO rename stat
+        return QSearch<color>(alpha, beta, 0);
+      }
+      const int ralpha = (alpha - RazorDelta(depth));
+      const int tmp = QSearch<color>(ralpha, (ralpha + 1), 0);
       if (_stop) {
         return beta;
       }
-      if (eval <= alpha) {
+      if (tmp <= ralpha) {
         _stats.rzrCutoffs++;
-        return eval;
+        return tmp;
       }
     }
 
@@ -4326,13 +4346,13 @@ private:
     {
       assert((alpha + 1) == beta);
       // stand pat if we can get a score >= beta without even making a move
-      if (standPat >= beta) {
+      if (eval >= beta) {
         ExecNullMove<color>(*child);
         child->depthChange = 0;
         child->nullMoveOk = 0;
         searchDepth = (depth - 3 - (depth / 6) - ((standPat - beta) >= 400));
         eval = (searchDepth > 0)
-            ? -child->Search<!color>(-beta, -alpha, searchDepth, false)
+            ? -child->Search<NonPv, !color>(-beta, -alpha, searchDepth, false)
             : -child->QSearch<!color>(-beta, -alpha, 0);
         if (_stop) {
           return beta;
@@ -4341,7 +4361,7 @@ private:
           // TODO do verification search if depth reduction > 4
           _stats.nmCutoffs++;
           pvCount = 0;
-          return standPat; // do not return eval
+          return (standPat >= beta) ? standPat : beta; // do not return eval
         }
       }
       else if ((_test & 1) && cutNode && (depth > 2)) {
@@ -4380,7 +4400,7 @@ private:
       assert(!pvCount);
       _stats.iidCount++;
       searchDepth = (depth - depthChange - (pvNode ? 2 : 4));
-      eval = Search<color>((beta - 1), beta, searchDepth, true);
+      eval = Search<type, color>((beta - 1), beta, searchDepth, true);
       if (_stop || !pvCount) {
         return eval;
       }
@@ -4418,7 +4438,7 @@ private:
     child->depthChange = 0;
     child->nullMoveOk = 1;
     eval = (depth > 1)
-        ? -child->Search<!color>(-beta, -alpha, (depth - 1), !cutNode)
+        ? -child->Search<type, !color>(-beta, -alpha, (depth - 1), !cutNode)
         : -child->QSearch<!color>(-beta, -alpha, 0);
     Undo<color>(firstMove);
     assert(!pvNode || (child->depthChange >= 0));
@@ -4481,7 +4501,7 @@ private:
       // first search with a null window to quickly see if it improves alpha
       child->nullMoveOk = 1;
       eval = ((depth + child->depthChange - 1) > 0)
-          ? -child->Search<!color>(-(alpha + 1), -alpha, (depth - 1), true)
+          ? -child->Search<NonPv, !color>(-(alpha + 1), -alpha, (depth - 1), true)
           : -child->QSearch<!color>(-(alpha + 1), -alpha, 0);
 
       // re-search at full depth?
@@ -4490,7 +4510,7 @@ private:
         _stats.lmResearches++;
         child->nullMoveOk = 0;
         child->depthChange = 0;
-        eval = -child->Search<!color>(-(alpha + 1), -alpha, (depth - 1), false);
+        eval = -child->Search<NonPv, !color>(-(alpha + 1), -alpha, (depth - 1), false);
         if (!_stop && (eval > alpha)) {
           _stats.lmConfirmed++;
         }
@@ -4501,7 +4521,7 @@ private:
         assert(child->depthChange >= 0);
         child->nullMoveOk = 0;
         eval = (depth > 1)
-            ? -child->Search<!color>(-beta, -alpha, (depth - 1), false)
+            ? -child->Search<type, !color>(-beta, -alpha, (depth - 1), false)
             : -child->QSearch<!color>(-beta, -alpha, 0);
       }
 
@@ -4633,7 +4653,7 @@ private:
       _seldepth = _depth = (d + 1);
 
       newPV = true;
-      delta = 25;
+      delta = (_depth < 5) ? HugeDelta : 25;
       alpha = std::max<int>((best - delta), -Infinity);
       beta  = std::min<int>((best + delta), +Infinity);
 
@@ -4650,7 +4670,9 @@ private:
         child->nullMoveOk = 1;
         Exec<color>(*move, *child);
         move->Score() = (_depth > 1)
-            ? -child->Search<!color>(-beta, -alpha, (_depth - 1), false)
+            ? ((_movenum == 1)
+               ? -child->Search<PvNode, !color>(-beta, -alpha, (_depth - 1), false)
+               : -child->Search<NonPv, !color>(-beta, -alpha, (_depth - 1), false))
             : -child->QSearch<!color>(-beta, -alpha, 0);
         assert(move->GetScore() > -Infinity);
         assert(move->GetScore() < Infinity);
@@ -4665,18 +4687,16 @@ private:
         {
           int bound[2] = { -Infinity, Infinity };
           newPV = true;
-          delta = 25;
+          delta = (_depth < 5) ? HugeDelta : 100;
           do {
             if (move->GetScore() >= beta) {
               OutputPV(move->GetScore(), 1); // report lowerbound
-              delta = std::max<int>((delta * 3), (move->GetScore() - beta));
               beta = std::min<int>(Infinity, (move->GetScore() + delta));
               alpha = (move->GetScore() - 1);
             }
             else {
               assert(move->GetScore() <= alpha);
               OutputPV(move->GetScore(), -1); // report upperbound
-              delta = std::max<int>((delta * 3), (alpha - move->GetScore()));
               if (_movenum == 1) {
                 alpha = std::max<int>(-Infinity, (move->GetScore() - delta));
               }
@@ -4688,7 +4708,7 @@ private:
             child->depthChange = 0;
             child->nullMoveOk = 0;
             move->Score() = (_depth > 1)
-                ? -child->Search<!color>(-beta, -alpha, (_depth - 1), false)
+                ? -child->Search<PvNode, !color>(-beta, -alpha, (_depth - 1), false)
                 : -child->QSearch<!color>(-beta, -alpha, 0);
             assert(move->GetScore() > -Infinity);
             assert(move->GetScore() < Infinity);
@@ -4711,6 +4731,9 @@ private:
                               << bound[0] << ", " << bound[1] << ")";
               break;
             }
+            if (abs(move->GetScore()) >= 1000) {
+              delta = HugeDelta;
+            }
           } while ((move->GetScore() <= alpha) || (move->GetScore() >= beta));
         }
         Undo<color>(*move);
@@ -4728,12 +4751,12 @@ private:
                       HashEntry::FromPV);
           }
 
-          // set null aspiration window now that we have a principal variation
           best = alpha = move->GetScore();
-          beta = (alpha + 1);
-
           ScootMoveToFront(moveIndex);
         }
+
+        // set null aspiration window now that we have a principal variation
+        beta = (alpha + 1);
       }
     }
 

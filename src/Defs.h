@@ -168,7 +168,8 @@ enum Limits
                     (2 * BishopValue) + (2 * RookValue) +  QueenValue),
   WinningScore   = 30000,
   MateScore      = 31000,
-  Infinity       = 32000
+  Infinity       = 32000,
+  HugeDelta      = 64000
 };
 
 //----------------------------------------------------------------------------

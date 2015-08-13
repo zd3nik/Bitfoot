@@ -4164,12 +4164,7 @@ private:
   }
 
   //--------------------------------------------------------------------------
-  enum NodeType {
-    PvNode,
-    NonPv
-  };
-
-  //--------------------------------------------------------------------------
+  enum NodeType { PV, NonPV };
   template<NodeType type, Color color>
   int Search(int alpha, int beta, int depth, const bool cutNode) {
     assert(alpha < beta);
@@ -4178,7 +4173,7 @@ private:
     assert(depth > 0);
     assert(depthChange <= 1);
     assert((depth + depthChange) > 0);
-    assert((type == PvNode) || ((alpha + 1) == beta));
+    assert((type == PV) || ((alpha + 1) == beta));
 
     _stats.snodes++;
     pvCount = 0;
@@ -4245,7 +4240,7 @@ private:
     }
 
     // do we have anything for this position in the transposition table?
-    const bool pvNode = (type == PvNode);
+    const bool pvNode = (type == PV);
     HashEntry* entry = _tt.Probe(positionKey);
     Move firstMove;
     eval = standPat;
@@ -4352,7 +4347,7 @@ private:
         child->nullMoveOk = 0;
         searchDepth = (depth - 3 - (depth / 6) - ((standPat - beta) >= 400));
         eval = (searchDepth > 0)
-            ? -child->Search<NonPv, !color>(-beta, -alpha, searchDepth, false)
+            ? -child->Search<NonPV, !color>(-beta, -alpha, searchDepth, false)
             : -child->QSearch<!color>(-beta, -alpha, 0);
         if (_stop) {
           return beta;
@@ -4501,7 +4496,7 @@ private:
       // first search with a null window to quickly see if it improves alpha
       child->nullMoveOk = 1;
       eval = ((depth + child->depthChange - 1) > 0)
-          ? -child->Search<NonPv, !color>(-(alpha + 1), -alpha, (depth - 1), true)
+          ? -child->Search<NonPV, !color>(-(alpha + 1), -alpha, (depth - 1), true)
           : -child->QSearch<!color>(-(alpha + 1), -alpha, 0);
 
       // re-search at full depth?
@@ -4510,7 +4505,7 @@ private:
         _stats.lmResearches++;
         child->nullMoveOk = 0;
         child->depthChange = 0;
-        eval = -child->Search<NonPv, !color>(-(alpha + 1), -alpha, (depth - 1), false);
+        eval = -child->Search<NonPV, !color>(-(alpha + 1), -alpha, (depth - 1), false);
         if (!_stop && (eval > alpha)) {
           _stats.lmConfirmed++;
         }
@@ -4671,8 +4666,8 @@ private:
         Exec<color>(*move, *child);
         move->Score() = (_depth > 1)
             ? ((_movenum == 1)
-               ? -child->Search<PvNode, !color>(-beta, -alpha, (_depth - 1), false)
-               : -child->Search<NonPv, !color>(-beta, -alpha, (_depth - 1), false))
+               ? -child->Search<PV, !color>(-beta, -alpha, (_depth - 1), false)
+               : -child->Search<NonPV, !color>(-beta, -alpha, (_depth - 1), false))
             : -child->QSearch<!color>(-beta, -alpha, 0);
         assert(move->GetScore() > -Infinity);
         assert(move->GetScore() < Infinity);
@@ -4708,7 +4703,7 @@ private:
             child->depthChange = 0;
             child->nullMoveOk = 0;
             move->Score() = (_depth > 1)
-                ? -child->Search<PvNode, !color>(-beta, -alpha, (_depth - 1), false)
+                ? -child->Search<PV, !color>(-beta, -alpha, (_depth - 1), false)
                 : -child->QSearch<!color>(-beta, -alpha, 0);
             assert(move->GetScore() > -Infinity);
             assert(move->GetScore() < Infinity);

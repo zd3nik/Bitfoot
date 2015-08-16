@@ -1,5 +1,5 @@
 rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 am a2a3 a2a4 b2b4 c2c3 d2d3 e2e3 f2f3 h2h3 h2h4 b1a3 b1c3 g1f3 g1h3
-5k2/3R4/3p1P2/2pP1P2/3p2B1/3n1K2/8/7r w - - 0 63 bm Kg2
+4r3/3r2k1/p1N1pp2/P1Rn2p1/1p1P3p/1P4PP/5PK1/4R3 w - - 0 41 am gxh4
 4k3/3n1rpp/5p2/1Pb1p3/3p1P2/1P6/1B3P1P/2RR2K1 b - - 0 23 am Ke7 Kf8
 8/8/8/P2Npk2/1P5P/5r2/6RK/r7 b - - 0 64 bm e4
 1Q4R1/r2qbp2/3p1kp1/3Bp2p/8/3PP1P1/5PKP/8 w - - bm e4 Rxg6+; id "ECM.818";
@@ -18,7 +18,6 @@ rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 am a2a3 a2a4 b2b4 c2c3 
 1Q6/pb3pk1/1p3qp1/1N3p1p/2Pr3P/3BR1PK/r7/6R1 b - - bm Rh2+; id "ECM.230";
 1R6/p5pk/4p2p/4P3/8/2r3qP/P3R1b1/4Q1K1 b - - bm Rc1; id "WAC.236";
 1b5k/7P/p1p2np1/2P2p2/PP3P2/4RQ1R/q2r3P/6K1 w - - bm Re8+; id "WAC.250";
-4r3/3r2k1/p1N1pp2/P1Rn2p1/1p1P3p/1P4PP/5PK1/4R3 w - - 0 41 am gxh4
 1B1b4/7K/1p6/1k6/8/8/8/8 w - - bm Ba7; id "L.Kaufman CCR Test No.22";
 1k1r3r/1pp2p2/p2b4/4n1p1/N3q1P1/1B2B3/PP3RP1/4RQK1 b - - bm Rh1+; id "ECM.225";
 1k1r3r/ppb2p2/1np1b2p/4p1pq/1Q1PP3/2P3P1/1R1NNPBP/R5K1 w - - bm Nb3; id "Crafty Test Pos.106"; c0 "KEVIN SPRAGGETT/DEEP THOUGHT,  GAME 2, Exhibition At the WCCC 1989, move 21W (Nb3)";

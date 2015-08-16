@@ -15,6 +15,9 @@ CONFIG(release, debug|release) {
   DEFINES += NDEBUG
 }
 
+# deploy epd files with each build
+include(epd.pri)
+
 # add GITREV to QMAKE_CXXFLAGS
 include(gitrev.pri)
 
@@ -48,6 +51,3 @@ HEADERS += \
     senjo/Square.h \
     senjo/Threading.h \
     senjo/UCIAdapter.h
-
-DISTFILES += \
-    epd/*.epd

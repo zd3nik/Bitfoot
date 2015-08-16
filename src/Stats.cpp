@@ -23,17 +23,20 @@ void Stats::Clear()
   execs         = 0;
   qexecs        = 0;
   deltaCount    = 0;
+  futility      = 0;
   rzrCount      = 0;
+  rzrEarlyOut   = 0;
   rzrCutoffs    = 0;
   iidCount      = 0;
-  iidBeta       = 0;
   nullMoves     = 0;
   nmCutoffs     = 0;
   nmThreats     = 0;
+  nmrCandidates = 0;
+  nmReductions  = 0;
+  nmrBackfires  = 0;
   lateMoves     = 0;
   lmCandidates  = 0;
   lmReductions  = 0;
-  lmDoubleRed   = 0;
   lmResearches  = 0;
   lmConfirmed   = 0;
   lmAlphaIncs   = 0;
@@ -51,17 +54,20 @@ Stats& Stats::operator+=(const Stats& other) {
   execs         += other.execs;
   qexecs        += other.qexecs;
   deltaCount    += other.deltaCount;
+  futility      += other.futility;
   rzrCount      += other.rzrCount;
+  rzrEarlyOut   += other.rzrEarlyOut;
   rzrCutoffs    += other.rzrCutoffs;
   iidCount      += other.iidCount;
-  iidBeta       += other.iidBeta;
   nullMoves     += other.nullMoves;
   nmCutoffs     += other.nmCutoffs;
   nmThreats     += other.nmThreats;
+  nmrCandidates += other.nmrCandidates;
+  nmReductions  += other.nmReductions;
+  nmrBackfires  += other.nmrBackfires;
   lateMoves     += other.lateMoves;
   lmCandidates  += other.lmCandidates;
   lmReductions  += other.lmReductions;
-  lmDoubleRed   += other.lmDoubleRed;
   lmResearches  += other.lmResearches;
   lmConfirmed   += other.lmConfirmed;
   lmAlphaIncs   += other.lmAlphaIncs;
@@ -88,17 +94,20 @@ Stats Stats::Average() const {
   avg.execs         = Avg(execs,        statCount);
   avg.qexecs        = Avg(qexecs,       statCount);
   avg.deltaCount    = Avg(deltaCount,   statCount);
+  avg.futility      = Avg(futility,     statCount);
   avg.rzrCount      = Avg(rzrCount,     statCount);
+  avg.rzrEarlyOut   = Avg(rzrEarlyOut,  statCount);
   avg.rzrCutoffs    = Avg(rzrCutoffs,   statCount);
   avg.iidCount      = Avg(iidCount,     statCount);
-  avg.iidBeta       = Avg(iidBeta,      statCount);
   avg.nullMoves     = Avg(nullMoves,    statCount);
   avg.nmCutoffs     = Avg(nmCutoffs,    statCount);
   avg.nmThreats     = Avg(nmThreats,    statCount);
+  avg.nmrCandidates = Avg(nmrCandidates,statCount);
+  avg.nmReductions  = Avg(nmReductions, statCount);
+  avg.nmrBackfires  = Avg(nmrBackfires, statCount);
   avg.lateMoves     = Avg(lateMoves,    statCount);
   avg.lmCandidates  = Avg(lmCandidates, statCount);
   avg.lmReductions  = Avg(lmReductions, statCount);
-  avg.lmDoubleRed   = Avg(lmDoubleRed,  statCount);
   avg.lmResearches  = Avg(lmResearches, statCount);
   avg.lmConfirmed   = Avg(lmConfirmed,  statCount);
   avg.lmAlphaIncs   = Avg(lmAlphaIncs,  statCount);
@@ -128,8 +137,14 @@ void Stats::Print() {
 
   if (rzrCount) {
     Output() << rzrCount << " razor attempts, "
-             << rzrCutoffs << " confirmed ("
+             << rzrEarlyOut << " early out ("
+             << Percent(rzrEarlyOut, rzrCount) << "%), "
+             << rzrCutoffs << " cutoffs ("
              << Percent(rzrCutoffs, rzrCount) << "%)";
+  }
+
+  if (futility) {
+    Output() << futility << " futility prunings";
   }
 
   if (nullMoves) {
@@ -140,9 +155,16 @@ void Stats::Print() {
              << Percent(nmThreats, nullMoves) << "%)";
   }
 
+  if (nmrCandidates) {
+    Output() << nmrCandidates << " nmr candidates, "
+             << nmReductions << " reduced ("
+             << Percent(nmReductions, nmrCandidates) << "%), "
+             << nmrBackfires << " backfires ("
+             << Percent(nmrBackfires, nmReductions) << "%)";
+  }
+
   if (iidCount) {
-    Output() << iidCount << " IID searches, " << iidBeta << " failed high ("
-             << Percent(iidBeta, iidCount) << "%)";
+    Output() << iidCount << " IID searches";
   }
 
   Output() << lateMoves << " late moves ("
@@ -154,9 +176,7 @@ void Stats::Print() {
     Output() << lmCandidates << " lmr candidates ("
              << Percent(lmCandidates, lateMoves) << "%), "
              << lmReductions << " reduced ("
-             << Percent(lmReductions, lmCandidates) << "%), "
-             << lmDoubleRed << " double ("
-             << Percent(lmDoubleRed, lmReductions) << "%)";
+             << Percent(lmReductions, lmCandidates) << "%)";
     Output() << lmResearches << " lmr alpha increases ("
              << Percent(lmResearches, lmReductions) << "%), "
              << lmConfirmed << " confirmed ("

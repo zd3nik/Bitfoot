@@ -97,7 +97,9 @@ private:
   static bool                _ext;            // check extensions
   static bool                _iid;            // internal iterative deepening
   static bool                _initialized;    // is the engine initialized?
+  static bool                _lmr;            // late move reductions
   static bool                _nmp;            // null move pruning
+  static bool                _nmr;            // null move reductions
   static bool                _oneReply;       // one reply extenstions
   static char                _hist[0x10000];  // move performance history
   static int                 _board[64];      // piece positions
@@ -105,7 +107,7 @@ private:
   static int                 _delta;          // delta pruning margin
   static int                 _depth;          // current root search depth
   static int                 _drawScore[2];   // score for getting a draw
-  static int                 _lmr;            // late move reduction
+  static int                 _futility;       // futility pruning delta
   static int                 _movenum;        // current root search move number
   static int                 _rzr;            // razoring delta
   static int                 _seldepth;       // current selective search depth
@@ -113,7 +115,7 @@ private:
   static int                 _test;           // new feature test value
   static std::string         _currmove;       // current root search move
   static int64_t             _hashSize;       // transposition table byte size
-  static Bitfoot              _node[MaxPlies]; // the node stack
+  static Bitfoot             _node[MaxPlies]; // the node stack
   static std::set<uint64_t>  _seen;           // position keys already seen
   static TranspositionTable  _tt;             // info about visited positions
   static Stats               _stats;          // misc counters
@@ -123,9 +125,11 @@ private:
   static senjo::EngineOption _optContempt;    // contempt for draw option
   static senjo::EngineOption _optDelta;       // delta pruning margin option
   static senjo::EngineOption _optEXT;         // check extensions option
+  static senjo::EngineOption _optFutility;    // futility pruning option
   static senjo::EngineOption _optIID;         // intrnl iterative deepening opt
   static senjo::EngineOption _optLMR;         // late move reductions option
   static senjo::EngineOption _optNMP;         // null move pruning option
+  static senjo::EngineOption _optNMR;         // null move reduction option
   static senjo::EngineOption _optOneReply;    // one reply extensions option
   static senjo::EngineOption _optRZR;         // razoring delta option
   static senjo::EngineOption _optTempo;       // tempo bonus option
@@ -205,6 +209,7 @@ private:
   // variables updated by search methods
   //--------------------------------------------------------------------------
   int  depthChange;
+  int  nmrAttempt;
   int  nullMoveOk;
   int  pvCount;
   Move killer[2];
@@ -227,7 +232,14 @@ private:
 
   //--------------------------------------------------------------------------
   inline int RazorDelta(const int depth) const {
-    return (_rzr + (64 * depth));
+    const int x = (64 * depth);
+    return (_rzr + (x * (x / 128)));
+  }
+
+  //--------------------------------------------------------------------------
+  inline int FutilityDelta(const int depth) const {
+    const int x = (_futility * depth);
+    return (x * (x / 256));
   }
 
   //--------------------------------------------------------------------------
@@ -1359,7 +1371,7 @@ private:
     // is there a potential mate threat?
     // NOTE: this routine is imperfect in many ways, but it should catch
     // a large bulk of real mate threats, such as back rank mates
-    if ((_test & 4) && !MULTI_BIT(p)) {
+    if ((_test & 2) && !MULTI_BIT(p)) {
       w = (_KNIGHT_ATK[sqr] & atks[(!color)|Knight] & ~atks[color]);
       if (w && !p) {
         score -= 10;
@@ -1753,7 +1765,7 @@ private:
   }
 
   //--------------------------------------------------------------------------
-  int Evaluate() {
+  void Evaluate() {
 #ifndef NDEBUG
     assert(!(state & Draw));
     memset(&evals, 0, sizeof(evals));
@@ -1806,6 +1818,18 @@ private:
     // now that attack bitmaps are complete evaluate passed pawns
     if (pinfo[White].passed) eval += PasserEval<White>();
     if (pinfo[Black].passed) eval -= PasserEval<Black>();
+
+#ifndef NDEBUG
+    VerifyPosition();
+#endif
+
+    // NOTE: if draw due to rcount this destabilizes the transposition table
+    //       because rcount is not encoded into positionKey
+    if (IsDraw()) {
+      state |= Draw;
+      standPat = _drawScore[ColorToMove()];
+      return;
+    }
 
     // TODO use specialized eval function for particular piece configurations
 
@@ -1883,14 +1907,16 @@ private:
                                (BitCount(blackPcs) > 2));
     if (!whiteCanWin && !blackCanWin) {
       state |= Draw;
+      standPat = _drawScore[ColorToMove()];
+      return;
     }
 
     // reduce winning score if "winning" side can't win
     else if ((eval > 0) && !whiteCanWin) {
-      eval = std::min<int>(24, (eval / 6));
+      eval = std::min<int>(50, (eval / 4));
     }
     else if ((eval < 0) && !blackCanWin) {
-      eval = std::max<int>(-24, (eval / 6));
+      eval = std::max<int>(-50, (eval / 4));
     }
 
     // bonus if opponent can't win and we're not in a clearly worse position
@@ -1906,23 +1932,27 @@ private:
       if (SINGLE_BIT(whitePcs) && (whitePcs == pc[WhiteRook]) &&
           (blackPcs == MinorPieces<Black>()) && (BitCount(blackPcs) <= 2))
       {
-        eval -= (eval / 6);
+        assert((abs(eval) / 4) < PawnValue);
+        eval -= (eval / 4);
       }
       else if (SINGLE_BIT(blackPcs) && (blackPcs == pc[BlackRook]) &&
                (whitePcs == MinorPieces<White>()) && (BitCount(whitePcs) <= 2))
       {
-        eval -= (eval / 6);
+        assert((abs(eval) / 4) < PawnValue);
+        eval -= (eval / 4);
       }
 
       // reduce winning score if Q vs R
       else if (SINGLE_BIT(whitePcs) && (whitePcs == pc[WhiteQueen]) &&
                SINGLE_BIT(blackPcs) && (blackPcs == pc[BlackRook]))
       {
+        assert((abs(eval) / 6) < PawnValue);
         eval -= (eval / 6);
       }
       else if (SINGLE_BIT(whitePcs) && (whitePcs == pc[WhiteRook]) &&
                SINGLE_BIT(blackPcs) && (blackPcs == pc[BlackQueen]))
       {
+        assert((abs(eval) / 6) < PawnValue);
         eval -= (eval / 6);
       }
     }
@@ -1957,13 +1987,15 @@ private:
              !pc[WhitePawn] && SINGLE_BIT(whitePcs) &&
              (whitePcs == MinorPieces<White>()))
     {
-      eval -= (eval / 3);
+      assert((abs(eval) / 4) < PawnValue);
+      eval -= (eval / 4);
     }
     else if (!whitePcs && SINGLE_BIT(pc[WhitePawn]) &&
              !pc[BlackPawn] && SINGLE_BIT(blackPcs) &&
              (blackPcs == MinorPieces<Black>()))
     {
-      eval -= (eval / 3);
+      assert((abs(eval) / 4) < PawnValue);
+      eval -= (eval / 4);
     }
 
     // reduce winning score if rcount is getting large
@@ -1973,13 +2005,8 @@ private:
       eval = static_cast<int>(eval * (25.0 / rcount));
     }
 
-    // standPat is just eval from persepctive of the side to move
+    // standPat is eval from persepctive of the side to move
     standPat = (ColorToMove() ? -eval : eval);
-
-#ifndef NDEBUG
-    VerifyPosition();
-#endif
-    return eval;
   }
 
   //--------------------------------------------------------------------------
@@ -2701,6 +2728,8 @@ private:
         move.Score() += 50;
       }
       else {
+        assert(_hist[move.GetHistoryIndex()] >= -2);
+        assert(_hist[move.GetHistoryIndex()] <= 40);
         move.Score() += _hist[move.GetHistoryIndex()];
       }
     }
@@ -4205,6 +4234,7 @@ private:
         depth++;
       }
       else {
+        assert(SINGLE_BIT(chkrs));
         tmp = (atks[color|King] & ~atks[!color] & ~pc[color]);
         if (tmp) {
           const int from = LowSquare(chkrs);
@@ -4230,7 +4260,8 @@ private:
     }
 
     // extend depth if we are facing a new threat
-    if ((_test & 8) && (depthChange <= 0) && (parent->depthChange <= 0) &&
+    // TODO try only doing this when (depthChange < 0)
+    if ((_test & 4) && (depthChange <= 0) && (parent->depthChange <= 0) &&
         (state & (color ? WhiteThreat : BlackThreat)) &&
         !(parent->state & (color ? WhiteThreat : BlackThreat)))
     {
@@ -4266,7 +4297,9 @@ private:
         firstMove.Init(entry->moveBits, entry->score);
         assert(entry->HasPvFlag());
         assert(ValidateMove<color>(firstMove) == 0);
-        if (entry->depth >= depth) {
+        if ((entry->depth >= depth) && ((entry->score <= alpha) ||
+                                        (entry->score >= beta)))
+        {
           pv[0] = firstMove;
           pvCount = 1;
           if ((entry->score >= beta) && !firstMove.IsCapOrPromo()) {
@@ -4309,17 +4342,17 @@ private:
       }
     }
 
-    // razoring
-    // if we're well below alpha and q-search doesn't show a saving tactic
-    // return q-search result
-    if (_rzr && !check && !pvNode && nullMoveOk && (depth < 4) &&
-        (depthChange <= 0) && !firstMove.IsValid() && (alpha < WinningScore) &&
+    // some prerequisites for forward pruning
+    bool pruneOK = (!pvNode && !check && nullMoveOk && (depthChange <= 0));
+
+    // razoring (fail low pruning)
+    if (_rzr && pruneOK && (depth < 4) && (alpha < WinningScore) &&
         !(pinfo[color].passed & _RANK[color ? 1 : 6]) &&
-        ((eval + RazorDelta(depth)) <= alpha))
+        !parent->InCheck() && ((eval + RazorDelta(depth)) <= alpha))
     {
       _stats.rzrCount++;
-      if ((depth <= 1) && ((standPat + RazorDelta(3 * depth)) <= alpha)) {
-        _stats.iidBeta++; // TODO rename stat
+      if ((depth <= 1) && ((eval + RazorDelta(3 * depth)) <= alpha)) {
+        _stats.rzrEarlyOut++;
         return QSearch<color>(alpha, beta, 0);
       }
       const int ralpha = (alpha - RazorDelta(depth));
@@ -4333,19 +4366,27 @@ private:
       }
     }
 
-    // null move heuristics
-    if (_nmp && nullMoveOk && !check && !pvNode && (depth > 1) &&
-        (depthChange <= 0) && (abs(beta) < WinningScore) &&
-        (tmp = MajorsAndMinors<color>()) &&
-        (MULTI_BIT(tmp) || (BitCount(pc[color]) > 3)))
+    // additional prerequisites for null move heauristics
+    tmp = MajorsAndMinors<color>();
+    pruneOK &= (!check && (MULTI_BIT(tmp) || (BitCount(pc[color]) > 3)));
+
+    // futility pruning (static null move pruning)
+    if (_futility && cutNode && pruneOK && (depth < 7) && // TODO try different max depths
+        ((eval - FutilityDelta(depth)) >= beta))
     {
-      assert((alpha + 1) == beta);
+      _stats.futility++;
+      pvCount = 0;
+      return (eval - FutilityDelta(depth));
+    }
+
+    // null move heuristics
+    if (_nmp && pruneOK && (depth > 1)) {
       // stand pat if we can get a score >= beta without even making a move
       if (eval >= beta) {
         ExecNullMove<color>(*child);
         child->depthChange = 0;
         child->nullMoveOk = 0;
-        searchDepth = (depth - 3 - (depth / 6) - ((standPat - beta) >= 400));
+        searchDepth = (depth - 3 - (depth / 6) - ((eval - 400) >= beta));
         eval = (searchDepth > 0)
             ? -child->Search<NonPV, !color>(-beta, -alpha, searchDepth, false)
             : -child->QSearch<!color>(-beta, -alpha, 0);
@@ -4358,42 +4399,55 @@ private:
           pvCount = 0;
           return (standPat >= beta) ? standPat : beta; // do not return eval
         }
+        else if ((_test & 1) && (eval <= -WinningScore) && child->pvCount &&
+                 (depthChange <= 0) && (parent->depthChange <= 0) &&
+                 LastMoveEnabledPV(*child))
+        {
+          _stats.nmThreats++;
+          depthChange++;
+          depth++;
+        }
       }
-      else if ((_test & 1) && cutNode && (depth > 2)) {
+      else if (_nmr && cutNode && (depth > 2) && !parent->InCheck() &&
+               (eval >= -parent->standPat) && !lastMove.IsCapOrPromo() &&
+               !(BIT(lastMove.GetTo()) & pinfo[!color].passed))
+      {
+        nmrAttempt = 1;
+        _stats.nmrCandidates++;
         ExecNullMove<color>(*child);
         eval = -child->QSearch<!color>(-standPat, (1 - standPat), 0);
         if (_stop) {
           return beta;
         }
-        if (cutNode && (eval >= standPat)) {
-          // very quiet position, don't waste a lot of time on this one
-          _stats.lmDoubleRed++;
-          depthChange--;
-          depth--;
+        if (eval >= standPat) {
+          // last move look pretty quiet and we're already expecting
+          // to be able to refute it (this is a cutNode) so we're betting we
+          // can reduce depth and still refute it.  if not, we spend less time
+          // determining that the last move is actually pretty good.
+          // but this can backfire if:
+          // 1) reduced depth fails low here (fails high in parent)
+          // 2) parent failes low on re-search at full depth
+          // example stats: 4896 nmr candidates, 3254 reduced (66.4624%), 114 backfires (3.50338%)
+//          senjo::Output() << parent->moveIndex << ", " << lastMove.ToString()
+//                          << ", " << -parent->standPat
+//                          << ", " << eval
+//                          << ", " << standPat;
+//          PrintBoard();
+          _stats.nmReductions++;
+          depthChange -= (1 + (eval >= -parent->standPat));
+          depth -= (1 + (eval >= -parent->standPat));
         }
-      }
-      else {
-        eval = standPat;
-        assert(eval > -WinningScore);
-      }
-      if ((_test & 2) && child->pvCount && (eval <= -WinningScore) &&
-          (depthChange <= 0) && (parent->depthChange <= 0) &&
-          LastMoveEnabledPV(*child))
-      {
-        // parent move poses a threat, extend depth
-        _stats.nmThreats++;
-        depthChange++;
-        depth++;
       }
     }
     nullMoveOk = 0;
 
     // internal iterative deepening if no firstMove in transposition table
     if (_iid && !check && !firstMove.IsValid() && (beta < Infinity) &&
-        (depth > (pvNode ? 3 : 5)))
+        ((beta - 1) > -Infinity) && (depth >= (pvNode ? 4 : 6)))
     {
       assert(!pvCount);
       _stats.iidCount++;
+      // subtract depthChange because it will be added again at top of Search()
       searchDepth = (depth - depthChange - (pvNode ? 2 : 4));
       eval = Search<type, color>((beta - 1), beta, searchDepth, true);
       if (_stop || !pvCount) {
@@ -4431,16 +4485,34 @@ private:
     const int orig_alpha = alpha;
     Exec<color>(firstMove, *child);
     child->depthChange = 0;
+    child->nmrAttempt = 0;
     child->nullMoveOk = 1;
     eval = (depth > 1)
         ? -child->Search<type, !color>(-beta, -alpha, (depth - 1), !cutNode)
         : -child->QSearch<!color>(-beta, -alpha, 0);
-    Undo<color>(firstMove);
     assert(!pvNode || (child->depthChange >= 0));
     assert((depth + child->depthChange) >= 0);
     if (_stop) {
+      Undo<color>(firstMove);
       return beta;
     }
+    // re-search at full depth? -- if reduced NMR should have caused reduction
+    if ((child->depthChange < 0) && (eval > alpha)) {
+      assert(!pvNode);
+      assert(depth > 1);
+      assert(child->nmrAttempt);
+      child->nullMoveOk = 0;
+      child->depthChange = 0;
+      eval = -child->Search<type, !color>(-beta, -alpha, (depth - 1), false);
+      if (_stop) {
+        Undo<color>(firstMove);
+        return beta;
+      }
+      if ((eval <= alpha) && child->nmrAttempt) {
+        _stats.nmrBackfires++;
+      }
+    }
+    Undo<color>(firstMove);
     int pvDepth = (depth + ((child->depthChange < 0) ? child->depthChange : 0));
     best = eval;
     UpdatePV(firstMove);
@@ -4463,7 +4535,8 @@ private:
     }
 
     // search remaining moves
-    const bool lmr_ok = (_lmr && !pvNode && !check && (depth > (_lmr + 1)));
+    const bool lmr_ok = (_lmr && !check && (depth > 2));
+    const bool weak_line = (standPat <= -parent->standPat);
     while ((move = GetNextMove<color, AllMoves>(depth))) {
       if (firstMove == (*move)) {
         assert(firstMove.IsValid());
@@ -4482,11 +4555,11 @@ private:
           (_hist[move->GetHistoryIndex()] < 0))
       {
         _stats.lmReductions++;
-        if ((depth > (_lmr + 2)) || (-child->standPat <= alpha)) {
-          child->depthChange = -(_lmr + 1);
+        if (pvNode) {
+          child->depthChange = (moveIndex > 3) ? -1 : 0;
         }
         else {
-          child->depthChange = -_lmr;
+          child->depthChange = -(1 + weak_line);
         }
       }
       else {
@@ -4494,6 +4567,7 @@ private:
       }
 
       // first search with a null window to quickly see if it improves alpha
+      child->nmrAttempt = 0;
       child->nullMoveOk = 1;
       eval = ((depth + child->depthChange - 1) > 0)
           ? -child->Search<NonPV, !color>(-(alpha + 1), -alpha, (depth - 1), true)
@@ -4506,8 +4580,13 @@ private:
         child->nullMoveOk = 0;
         child->depthChange = 0;
         eval = -child->Search<NonPV, !color>(-(alpha + 1), -alpha, (depth - 1), false);
-        if (!_stop && (eval > alpha)) {
-          _stats.lmConfirmed++;
+        if (!_stop) {
+          if (eval > alpha) {
+            _stats.lmConfirmed++;
+          }
+          else if (child->nmrAttempt) {
+            _stats.nmrBackfires++;
+          }
         }
       }
 
@@ -4518,6 +4597,9 @@ private:
         eval = (depth > 1)
             ? -child->Search<type, !color>(-beta, -alpha, (depth - 1), false)
             : -child->QSearch<!color>(-beta, -alpha, 0);
+        if (!_stop && (eval <= alpha) && child->nmrAttempt) {
+          _stats.nmrBackfires++;
+        }
       }
 
       Undo<color>(*move);
@@ -4559,6 +4641,7 @@ private:
       pv[0].Score() = alpha;
       if (alpha > orig_alpha) {
         assert(pvNode);
+        assert(pvDepth == depth);
         if (!pv[0].IsCapOrPromo()) {
           IncHistory(pv[0], check, pvDepth);
         }
@@ -4568,6 +4651,7 @@ private:
       }
       else {
         assert(alpha == orig_alpha);
+        assert(pvDepth <= depth);
         _tt.Store(positionKey, pv[0], pvDepth, HashEntry::UpperBound,
             (((depthChange > 0) ? HashEntry::Extended : 0) |
              (pvNode ? HashEntry::FromPV : 0)));
@@ -4667,7 +4751,7 @@ private:
         move->Score() = (_depth > 1)
             ? ((_movenum == 1)
                ? -child->Search<PV, !color>(-beta, -alpha, (_depth - 1), false)
-               : -child->Search<NonPV, !color>(-beta, -alpha, (_depth - 1), false))
+               : -child->Search<NonPV, !color>(-beta, -alpha, (_depth - 1), true))
             : -child->QSearch<!color>(-beta, -alpha, 0);
         assert(move->GetScore() > -Infinity);
         assert(move->GetScore() < Infinity);

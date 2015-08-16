@@ -14,6 +14,50 @@ namespace bitfoot
 static const std::string _TRUE = "true";
 
 //----------------------------------------------------------------------------
+bool                Bitfoot::_ext = false;
+bool                Bitfoot::_iid = false;
+bool                Bitfoot::_initialized = false;
+bool                Bitfoot::_lmr = false;
+bool                Bitfoot::_nmp = false;
+bool                Bitfoot::_nmr = false;
+bool                Bitfoot::_oneReply = false;
+char                Bitfoot::_hist[0x10000] = {0};
+int                 Bitfoot::_board[64] = {0};
+int                 Bitfoot::_contempt = 0;
+int                 Bitfoot::_delta = 0;
+int                 Bitfoot::_depth = 0;
+int                 Bitfoot::_drawScore[2] = {0};
+int                 Bitfoot::_futility = 0;
+int                 Bitfoot::_movenum = 0;
+int                 Bitfoot::_rzr = 0;
+int                 Bitfoot::_seldepth = 0;
+int                 Bitfoot::_tempo = 0;
+int                 Bitfoot::_test = 0;
+std::string         Bitfoot::_currmove;
+int64_t             Bitfoot::_hashSize = 0;
+Bitfoot             Bitfoot::_node[MaxPlies];
+std::set<uint64_t>  Bitfoot::_seen;
+TranspositionTable  Bitfoot::_tt;
+Stats               Bitfoot::_stats;
+Stats               Bitfoot::_totalStats;
+
+//----------------------------------------------------------------------------
+EngineOption Bitfoot::_optHash("Hash", "1024", EngineOption::Spin, 0, 4096);
+EngineOption Bitfoot::_optClearHash("Clear Hash", "", EngineOption::Button);
+EngineOption Bitfoot::_optContempt("Contempt", "0", EngineOption::Spin, 0, 50);
+EngineOption Bitfoot::_optDelta("Delta Pruning Margin", "0", EngineOption::Spin, 0, 9999);
+EngineOption Bitfoot::_optEXT("Check Extensions", _TRUE, EngineOption::Checkbox);
+EngineOption Bitfoot::_optFutility("Futility Pruning Delta", "200", EngineOption::Spin, 0, 9999);
+EngineOption Bitfoot::_optIID("Internal Iterative Deepening", _TRUE, EngineOption::Checkbox);
+EngineOption Bitfoot::_optLMR("Late Move Reductions", _TRUE, EngineOption::Checkbox);
+EngineOption Bitfoot::_optNMP("Null Move Pruning", _TRUE, EngineOption::Checkbox);
+EngineOption Bitfoot::_optNMR("Null Move Reductions", _TRUE, EngineOption::Checkbox);
+EngineOption Bitfoot::_optOneReply("One Reply Extensions", _TRUE, EngineOption::Checkbox);
+EngineOption Bitfoot::_optRZR("Razoring Delta", "500", EngineOption::Spin, 0, 9999);
+EngineOption Bitfoot::_optTempo("Tempo Bonus", "0", EngineOption::Spin, 0, 50);
+EngineOption Bitfoot::_optTest("Experimental Feature", "0", EngineOption::Spin, 0, 9999);
+
+//----------------------------------------------------------------------------
 #ifndef USE_SHIFT
 const uint64_t _BITMAP[64] =
 {
@@ -688,46 +732,6 @@ const uint64_t Bitfoot::_WIDE_SOUTH[64] =
 };
 
 //----------------------------------------------------------------------------
-bool                Bitfoot::_ext = false;
-bool                Bitfoot::_iid = false;
-bool                Bitfoot::_initialized = false;
-bool                Bitfoot::_nmp = false;
-bool                Bitfoot::_oneReply = false;
-char                Bitfoot::_hist[0x10000] = {0};
-int                 Bitfoot::_board[64] = {0};
-int                 Bitfoot::_contempt = 0;
-int                 Bitfoot::_delta = 0;
-int                 Bitfoot::_depth = 0;
-int                 Bitfoot::_drawScore[2] = {0};
-int                 Bitfoot::_lmr = 0;
-int                 Bitfoot::_movenum = 0;
-int                 Bitfoot::_rzr = 0;
-int                 Bitfoot::_seldepth = 0;
-int                 Bitfoot::_tempo = 0;
-int                 Bitfoot::_test = 0;
-std::string         Bitfoot::_currmove;
-int64_t             Bitfoot::_hashSize = 0;
-Bitfoot              Bitfoot::_node[MaxPlies];
-std::set<uint64_t>  Bitfoot::_seen;
-TranspositionTable  Bitfoot::_tt;
-Stats               Bitfoot::_stats;
-Stats               Bitfoot::_totalStats;
-
-//----------------------------------------------------------------------------
-EngineOption Bitfoot::_optHash("Hash", "1024", EngineOption::Spin, 0, 4096);
-EngineOption Bitfoot::_optClearHash("Clear Hash", "", EngineOption::Button);
-EngineOption Bitfoot::_optContempt("Contempt", "0", EngineOption::Spin, 0, 50);
-EngineOption Bitfoot::_optDelta("Delta Pruning Margin", "0", EngineOption::Spin, 0, 9999);
-EngineOption Bitfoot::_optEXT("Check Extensions", _TRUE, EngineOption::Checkbox);
-EngineOption Bitfoot::_optIID("Internal Iterative Deepening", _TRUE, EngineOption::Checkbox);
-EngineOption Bitfoot::_optLMR("Late Move Reduction", "1", EngineOption::Spin, 0, 3);
-EngineOption Bitfoot::_optNMP("Null Move Pruning", _TRUE, EngineOption::Checkbox);
-EngineOption Bitfoot::_optOneReply("One Reply Extensions", _TRUE, EngineOption::Checkbox);
-EngineOption Bitfoot::_optRZR("Razoring Delta", "500", EngineOption::Spin, 0, 9999);
-EngineOption Bitfoot::_optTempo("Tempo Bonus", "0", EngineOption::Spin, 0, 50);
-EngineOption Bitfoot::_optTest("Experimental Feature", "0", EngineOption::Spin, 0, 9999);
-
-//----------------------------------------------------------------------------
 std::string Bitfoot::GetEngineName() const
 {
   return (sizeof(void*) == 8) ? "Bitfoot" : "Bitfoot (32-bit)";
@@ -764,9 +768,11 @@ std::list<EngineOption> Bitfoot::GetOptions() const
   opts.push_back(_optContempt);
   opts.push_back(_optDelta);
   opts.push_back(_optEXT);
+  opts.push_back(_optFutility);
   opts.push_back(_optIID);
   opts.push_back(_optLMR);
   opts.push_back(_optNMP);
+  opts.push_back(_optNMR);
   opts.push_back(_optRZR);
   opts.push_back(_optTempo);
   opts.push_back(_optTest);
@@ -793,15 +799,21 @@ bool Bitfoot::SetEngineOption(const std::string& optionName,
       return true;
     }
   }
-  if (!stricmp(optionName.c_str(), _optEXT.GetName().c_str())) {
-    if (_optEXT.SetValue(optionValue)) {
-      _ext = (_optEXT.GetValue() == _TRUE);
-      return true;
-    }
-  }
   if (!stricmp(optionName.c_str(), _optDelta.GetName().c_str())) {
     if (_optDelta.SetValue(optionValue)) {
       _delta = static_cast<int>(_optDelta.GetIntValue());
+      return true;
+    }
+  }
+  if (!stricmp(optionName.c_str(), _optFutility.GetName().c_str())) {
+    if (_optFutility.SetValue(optionValue)) {
+      _futility = static_cast<int>(_optFutility.GetIntValue());
+      return true;
+    }
+  }
+  if (!stricmp(optionName.c_str(), _optEXT.GetName().c_str())) {
+    if (_optEXT.SetValue(optionValue)) {
+      _ext = (_optEXT.GetValue() == _TRUE);
       return true;
     }
   }
@@ -813,13 +825,19 @@ bool Bitfoot::SetEngineOption(const std::string& optionName,
   }
   if (!stricmp(optionName.c_str(), _optLMR.GetName().c_str())) {
     if (_optLMR.SetValue(optionValue)) {
-      _lmr = static_cast<int>(_optLMR.GetIntValue());
+      _lmr = (_optLMR.GetValue() == _TRUE);
       return true;
     }
   }
   if (!stricmp(optionName .c_str(), _optNMP.GetName().c_str())) {
     if (_optNMP.SetValue(optionValue)) {
       _nmp = (_optNMP.GetValue() == _TRUE);
+      return true;
+    }
+  }
+  if (!stricmp(optionName.c_str(), _optNMR.GetName().c_str())) {
+    if (_optNMR.SetValue(optionValue)) {
+      _nmr = (_optNMR.GetValue() == _TRUE);
       return true;
     }
   }
@@ -865,13 +883,15 @@ void Bitfoot::Initialize()
   _hashSize = _optHash.GetIntValue();
   _contempt = static_cast<int>(_optContempt.GetIntValue());
   _delta    = static_cast<int>(_optDelta.GetIntValue());
-  _lmr      = static_cast<int>(_optLMR.GetIntValue());
+  _futility = static_cast<int>(_optFutility.GetIntValue());
   _rzr      = static_cast<int>(_optRZR.GetIntValue());
   _tempo    = static_cast<int>(_optTempo.GetIntValue());
   _test     = static_cast<int>(_optTest.GetIntValue());
   _ext      = (_optEXT.GetValue() == _TRUE);
   _iid      = (_optIID.GetValue() == _TRUE);
+  _lmr      = (_optLMR.GetValue() == _TRUE);
   _nmp      = (_optNMP.GetValue() == _TRUE);
+  _nmr      = (_optNMR.GetValue() == _TRUE);
   _oneReply = (_optOneReply.GetValue() == _TRUE);
 
   ClearHistory();

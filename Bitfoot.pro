@@ -51,3 +51,6 @@ HEADERS += \
     senjo/Square.h \
     senjo/Threading.h \
     senjo/UCIAdapter.h
+
+DISTFILES += \
+    epd/*.epd

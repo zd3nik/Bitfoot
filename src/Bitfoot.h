@@ -239,7 +239,7 @@ private:
   //--------------------------------------------------------------------------
   inline int FutilityDelta(const int depth) const {
     const int x = (_futility * depth);
-    return (x * (x / 256));
+    return std::max<int>(x, (x * (x / 256)));
   }
 
   //--------------------------------------------------------------------------

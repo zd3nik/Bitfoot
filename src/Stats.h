@@ -30,9 +30,9 @@ struct Stats
   uint64_t deltaCount;    // delta prunings
   uint64_t futility;      // futility prunings
   uint64_t rzrCount;      // razoring attempts
+  uint64_t rzrEarlyOut;   // razoring early descent into qsearch
   uint64_t rzrCutoffs;    // successful razorings
   uint64_t iidCount;      // IID searches
-  uint64_t rzrEarlyOut;       // IID searches >= beta
   uint64_t nullMoves;     // ExecNullMove() calls
   uint64_t nmCutoffs;     // null moves cutoffs
   uint64_t nmThreats;     // null moves threat detections

@@ -117,9 +117,9 @@ private:
   static int64_t             _hashSize;       // transposition table byte size
   static Bitfoot             _node[MaxPlies]; // the node stack
   static std::set<uint64_t>  _seen;           // position keys already seen
-  static TranspositionTable  _tt;             // info about visited positions
   static Stats               _stats;          // misc counters
   static Stats               _totalStats;     // sum of misc counters
+  static TranspositionTable  _tt;             // info about visited positions
   static senjo::EngineOption _optHash;        // hash size option
   static senjo::EngineOption _optClearHash;   // clear hash option
   static senjo::EngineOption _optContempt;    // contempt for draw option
@@ -155,7 +155,7 @@ private:
   int      ply;
 
   //--------------------------------------------------------------------------
-  // variables updates by Exec() - in approximate order of update
+  // variables updated by Exec() - in approximate order of update
   //--------------------------------------------------------------------------
   uint64_t pc[PieceTypeCount];
   Move     lastMove;
@@ -296,6 +296,7 @@ private:
 
   //--------------------------------------------------------------------------
   inline void IncHistory(const Move& move, const bool check, const int depth) {
+    assert(depth >= 0);
     if (!check) {
       const int idx = move.GetHistoryIndex();
       const int val = (_hist[idx] + depth + 2);
@@ -1835,15 +1836,12 @@ private:
 
     // bonus for board coverage
     uint64_t x;
-    int count;
     x = (atks[WhitePawn]|atks[WhiteKnight]|atks[WhiteBishop]|atks[WhiteRook]|
          (atks[WhiteQueen] & (_CENTER16|atks[WhiteKing]|atks[BlackKing])));
-    eval += (BitCount(x) + BitCount(x & _CENTER16) + BitCount(x & _CENTER4) +
-             BitCount(x & (atks[WhiteKing]|atks[BlackKing])));
+    eval += (2 * (BitCount(x) + BitCount(x & _CENTER4)));
     x = (atks[BlackPawn]|atks[BlackKnight]|atks[BlackBishop]|atks[BlackRook]|
          (atks[BlackQueen] & (_CENTER16|atks[WhiteKing]|atks[BlackKing])));
-    eval -= (BitCount(x) + BitCount(x & _CENTER16)  + BitCount(x & _CENTER4) +
-             BitCount(x & (atks[WhiteKing]|atks[BlackKing])));
+    eval -= (2 * (BitCount(x) + BitCount(x & _CENTER4)));
 
     // penalty for unprotected pawns, knights, and bishops
     if ((x = ((pc[WhitePawn]|MinorPieces<White>()) & ~atks[White]))) {
@@ -1867,7 +1865,8 @@ private:
       eval -= (2 * BitCount(x));
 
       // increase value of 1 knight relative to # of pawns on the board
-      count = ((4 * (pinfo[White].count + pinfo[Black].count)) / 3);
+      int count = ((4 * (pinfo[White].count + pinfo[Black].count)) / 3);
+      assert(count <= 21);
       if (pc[WhiteKnight]) {
         eval += count;
       }
@@ -1877,6 +1876,7 @@ private:
 
       // increase value of 1 rook as pawns come off the board
       count = ((4 * count) / 3); // inflate pawn count a bit more
+      assert(count <= 28);
       if (pc[WhiteRook]) {
         eval += (28 - count);
       }
@@ -1912,90 +1912,54 @@ private:
     }
 
     // reduce winning score if "winning" side can't win
-    else if ((eval > 0) && !whiteCanWin) {
-      eval = std::min<int>(50, (eval / 4));
-    }
-    else if ((eval < 0) && !blackCanWin) {
-      eval = std::max<int>(-50, (eval / 4));
-    }
-
-    // bonus if opponent can't win and we're not in a clearly worse position
-    else if (!blackCanWin && (eval > -24)) {
-      eval += 50;
-    }
-    else if (!whiteCanWin && (eval < 24)) {
-      eval -= 50;
+    if (((eval > 0) && !whiteCanWin) || ((eval < 0) && !blackCanWin)) {
+      assert(whiteCanWin != blackCanWin);
+      assert(abs(eval) < 1000);
+      eval = ((eval * abs(eval)) / 1000);
+      eval += (whiteCanWin ? 50 : -50);
     }
 
     else if (!pc[WhitePawn] && !pc[BlackPawn]) {
-      // reduce winning score if R vs minor(s)
-      if (SINGLE_BIT(whitePcs) && (whitePcs == pc[WhiteRook]) &&
-          (blackPcs == MinorPieces<Black>()) && (BitCount(blackPcs) <= 2))
+      // reduce winning score if Q vs R
+      if (SINGLE_BIT(whitePcs) && SINGLE_BIT(blackPcs) &&
+          (((whitePcs == pc[WhiteQueen]) && (blackPcs == pc[BlackRook])) ||
+           ((blackPcs == pc[BlackQueen]) && (whitePcs == pc[WhiteRook]))))
       {
-        assert((abs(eval) / 4) < PawnValue);
-        eval -= (eval / 4);
-      }
-      else if (SINGLE_BIT(blackPcs) && (blackPcs == pc[BlackRook]) &&
-               (whitePcs == MinorPieces<White>()) && (BitCount(whitePcs) <= 2))
-      {
-        assert((abs(eval) / 4) < PawnValue);
-        eval -= (eval / 4);
+        eval -= ((eval > 0) ? 80 : -80);
       }
 
-      // reduce winning score if Q vs R
-      else if (SINGLE_BIT(whitePcs) && (whitePcs == pc[WhiteQueen]) &&
-               SINGLE_BIT(blackPcs) && (blackPcs == pc[BlackRook]))
-      {
-        assert((abs(eval) / 6) < PawnValue);
-        eval -= (eval / 6);
-      }
+      // reduce winning score if R vs minor(s)
       else if (SINGLE_BIT(whitePcs) && (whitePcs == pc[WhiteRook]) &&
-               SINGLE_BIT(blackPcs) && (blackPcs == pc[BlackQueen]))
+               (blackPcs == MinorPieces<Black>()) &&
+               (BitCount(blackPcs) <= 2) && (abs(eval) < 256))
       {
-        assert((abs(eval) / 6) < PawnValue);
-        eval -= (eval / 6);
+        eval = ((eval * abs(eval)) / 256);
+      }
+      else if (SINGLE_BIT(blackPcs) && (blackPcs == pc[BlackRook]) &&
+               (whitePcs == MinorPieces<White>()) &&
+               (BitCount(whitePcs) <= 2) && (abs(eval) < 256))
+      {
+        eval = ((eval * abs(eval)) / 256);
       }
     }
 
     // reduce winning score if pawns + R vs R ending
-//    else if ((whitePcs == pc[WhiteRook]) && (blackPcs == pc[BlackRook]) &&
-//             (BitCount(whitePcs) == BitCount(blackPcs)) &&
-//             (abs(eval) < 256))
-//    {
-//      int t = (eval / 16);
-//      t *= t;
-//      assert(t >= 0);
-//      assert(t <= abs(eval));
-//      eval = ((eval > 0) ? t : -t);
-//    }
+    else if ((whitePcs == pc[WhiteRook]) && (blackPcs == pc[BlackRook]) &&
+             (abs(eval) < 128))
+    {
+      eval = ((eval * abs(eval)) / 128);
+    }
 
     // reduce winning score if pawns + opposite color bishop ending
-    else if (SINGLE_BIT(whitePcs) && SINGLE_BIT(blackPcs) &&
-             (whitePcs == pc[WhiteBishop]) && (blackPcs == pc[BlackBishop]) &&
+    else if ((whitePcs == pc[WhiteBishop]) && (blackPcs == pc[BlackBishop]) &&
              (!(whitePcs & _LIGHT) != !(blackPcs & _LIGHT)) &&
-             (abs(eval) < 256))
+             SINGLE_BIT(whitePcs) && SINGLE_BIT(blackPcs) &&
+             (abs(eval) < 300))
     {
-      int t = (eval / 16);
-      t *= t;
-      assert(t >= 0);
-      assert(t <= abs(eval));
-      eval = ((eval > 0) ? t : -t);
-    }
-
-    // reduce winning score if P vs N|B, e.g. 8/6b1/6P1/8/4k3/6Kp/8/8 w - -
-    else if (!blackPcs && SINGLE_BIT(pc[BlackPawn]) &&
-             !pc[WhitePawn] && SINGLE_BIT(whitePcs) &&
-             (whitePcs == MinorPieces<White>()))
-    {
-      assert((abs(eval) / 4) < PawnValue);
-      eval -= (eval / 4);
-    }
-    else if (!whitePcs && SINGLE_BIT(pc[WhitePawn]) &&
-             !pc[BlackPawn] && SINGLE_BIT(blackPcs) &&
-             (blackPcs == MinorPieces<Black>()))
-    {
-      assert((abs(eval) / 4) < PawnValue);
-      eval -= (eval / 4);
+      if ((eval > 0) ? !pinfo[White].connected : !pinfo[Black].connected) {
+        eval /= 3;
+      }
+      eval = ((eval * abs(eval)) / 300);
     }
 
     // reduce winning score if rcount is getting large
@@ -4027,8 +3991,17 @@ private:
       return _drawScore[color];
     }
 
-    // do we have anything for this position in the transposition table?
+    // mate distance pruning and standPat beta cutoff
+    assert(standPat > (ply - Infinity));
     const bool check = InCheck();
+    int best = (check ? (ply - Infinity) : standPat);
+    alpha = std::max<int>(best, alpha);
+    beta = std::min<int>((Infinity - ply + 1), beta);
+    if ((alpha >= beta) || !child) {
+      return alpha;
+    }
+
+    // do we have anything for this position in the transposition table?
     Move firstMove;
     HashEntry* entry = _tt.Probe(positionKey);
     if (entry) {
@@ -4072,45 +4045,40 @@ private:
       }
     }
 
-    // mate distance pruning and standPat beta cutoff when not in check
-    int best = (check ? (ply - Infinity) : standPat);
-    alpha = std::max<int>(best, alpha);
-    beta = std::min<int>((Infinity - ply + 1), beta);
-    if ((alpha >= beta) || !child) {
-      return alpha;
-    }
+    assert(alpha < beta);
+    assert(best < beta);
+    assert(best <= alpha);
 
     // search firstMove if we have it
     const int orig_alpha = alpha;
     if (firstMove.IsValid()) {
       _stats.qexecs++;
       Exec<color>(firstMove, *child);
-      if (!check && !firstMove.IsValid() && !child->InCheck()) {
-        // stand pat if best move is non-volatile
+      if (!check && !firstMove.IsCapOrPromo() && !child->InCheck()) {
         Undo<color>(firstMove);
-        firstMove.Clear();
-        return standPat;
       }
-      firstMove.Score() = -child->QSearch<!color>(-beta, -alpha, (depth - 1));
-      Undo<color>(firstMove);
-      if (_stop) {
-        return beta;
-      }
-      if (firstMove.GetScore() >= best) {
-        best = firstMove.GetScore();
-        UpdatePV(firstMove);
-        if (firstMove.GetScore() >= beta) {
-          if (!firstMove.IsCapOrPromo()) {
-            AddKiller(firstMove);
-          }
-          if (check) {
-            firstMove.Score() = beta;
-            _tt.Store(positionKey, firstMove, 0, HashEntry::LowerBound, 0);
-          }
-          return best;
+      else {
+        firstMove.Score() = -child->QSearch<!color>(-beta, -alpha, (depth - 1));
+        Undo<color>(firstMove);
+        if (_stop) {
+          return beta;
         }
         if (firstMove.GetScore() > alpha) {
           alpha = firstMove.GetScore();
+        }
+        if (firstMove.GetScore() > best) {
+          best = firstMove.GetScore();
+          UpdatePV(firstMove);
+          if (firstMove.GetScore() >= beta) {
+            if (!firstMove.IsCapOrPromo()) {
+              AddKiller(firstMove);
+            }
+            if (check) {
+              firstMove.Score() = beta;
+              _tt.Store(positionKey, firstMove, 0, HashEntry::LowerBound, 0);
+            }
+            return best;
+          }
         }
       }
     }
@@ -4128,13 +4096,13 @@ private:
       Exec<color>(*move, *child);
       if (_delta && !check && (depth < 0) &&
           !move->GetPromo() && !child->InCheck() &&
-          ((standPat + ValueOf(move->GetCap()) + _delta) < alpha))
+          ((standPat + ValueOf(move->GetCap()) + _delta) <= alpha))
       {
+        _stats.deltaCount++;
         Undo<color>(*move);
         if (_stop) {
           return beta;
         }
-        _stats.deltaCount++;
         continue;
       }
 
@@ -4143,7 +4111,9 @@ private:
       if (_stop) {
         return beta;
       }
-
+      if (move->GetScore() > alpha) {
+        alpha = move->GetScore();
+      }
       if (move->GetScore() > best) {
         best = move->GetScore();
         UpdatePV(*move);
@@ -4156,9 +4126,6 @@ private:
             _tt.Store(positionKey, *move, 0, HashEntry::LowerBound, 0);
           }
           return best;
-        }
-        if (move->GetScore() > alpha) {
-          alpha = move->GetScore();
         }
       }
     }
@@ -4211,10 +4178,6 @@ private:
       return _drawScore[color];
     }
 
-    uint64_t tmp;
-    int searchDepth;
-    int eval;
-
     // mate distance pruning
     int best = (ply - Infinity);
     alpha = std::max<int>(best, alpha);
@@ -4226,6 +4189,7 @@ private:
     depth += depthChange;
 
     // check extensions
+    uint64_t tmp;
     const bool check = InCheck();
     if (_ext && check && (depthChange <= 0) && (parent->depthChange <= 0)) {
       if (MULTI_BIT(chkrs)) {
@@ -4274,7 +4238,7 @@ private:
     const bool pvNode = (type == PV);
     HashEntry* entry = _tt.Probe(positionKey);
     Move firstMove;
-    eval = standPat;
+    int eval = standPat;
     if (entry) {
       switch (entry->GetPrimaryFlag()) {
       case HashEntry::Checkmate: return (ply - Infinity);
@@ -4356,13 +4320,13 @@ private:
         return QSearch<color>(alpha, beta, 0);
       }
       const int ralpha = (alpha - RazorDelta(depth));
-      const int tmp = QSearch<color>(ralpha, (ralpha + 1), 0);
+      const int val = QSearch<color>(ralpha, (ralpha + 1), 0);
       if (_stop) {
         return beta;
       }
-      if (tmp <= ralpha) {
+      if (val <= ralpha) {
         _stats.rzrCutoffs++;
-        return tmp;
+        return val;
       }
     }
 
@@ -4380,7 +4344,9 @@ private:
     }
 
     // null move heuristics
+    int searchDepth;
     if (_nmp && pruneOK && (depth > 1)) {
+      assert((alpha + 1) == beta);
       // stand pat if we can get a score >= beta without even making a move
       if (eval >= beta) {
         ExecNullMove<color>(*child);
@@ -4449,7 +4415,7 @@ private:
       _stats.iidCount++;
       // subtract depthChange because it will be added again at top of Search()
       searchDepth = (depth - depthChange - (pvNode ? 2 : 4));
-      eval = Search<type, color>((beta - 1), beta, searchDepth, true);
+      eval = Search<NonPV, color>((beta - 1), beta, searchDepth, true);
       if (_stop || !pvCount) {
         return eval;
       }
@@ -4496,7 +4462,7 @@ private:
       Undo<color>(firstMove);
       return beta;
     }
-    // re-search at full depth? -- if reduced NMR should have caused reduction
+    // re-search at full depth? -- if reduced, NMR should have caused reduction
     if ((child->depthChange < 0) && (eval > alpha)) {
       assert(!pvNode);
       assert(depth > 1);
@@ -4535,8 +4501,8 @@ private:
     }
 
     // search remaining moves
-    const bool lmr_ok = (_lmr && !check && (depth > 2));
-    const bool weak_line = (standPat <= -parent->standPat);
+    const bool lmr_ok = (_lmr && !pvNode && !check && (depth > 2));
+    const bool weak = (standPat <= -parent->standPat);
     while ((move = GetNextMove<color, AllMoves>(depth))) {
       if (firstMove == (*move)) {
         assert(firstMove.IsValid());
@@ -4555,12 +4521,7 @@ private:
           (_hist[move->GetHistoryIndex()] < 0))
       {
         _stats.lmReductions++;
-        if (pvNode) {
-          child->depthChange = (moveIndex > 3) ? -1 : 0;
-        }
-        else {
-          child->depthChange = -(1 + weak_line);
-        }
+        child->depthChange = -(1 + (weak || (-child->standPat <= standPat)));
       }
       else {
         child->depthChange = 0;
@@ -4852,9 +4813,9 @@ private:
     _stats.Clear();
     _tt.ResetCounters();
 
-    _depth        = 0;
-    _movenum      = 0;
-    _seldepth     = 0;
+    _depth    = 0;
+    _movenum  = 0;
+    _seldepth = 0;
 
     _drawScore[ColorToMove()] = -_contempt;
     _drawScore[!ColorToMove()] = _contempt;

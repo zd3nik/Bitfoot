@@ -1838,10 +1838,12 @@ private:
     uint64_t x;
     x = (atks[WhitePawn]|atks[WhiteKnight]|atks[WhiteBishop]|atks[WhiteRook]|
          (atks[WhiteQueen] & (_CENTER16|atks[WhiteKing]|atks[BlackKing])));
-    eval += (2 * (BitCount(x) + BitCount(x & _CENTER4)));
+    eval += (BitCount(x) + BitCount(x & _CENTER4) +
+             BitCount(x & (atks[WhiteKing]|atks[BlackKing])));
     x = (atks[BlackPawn]|atks[BlackKnight]|atks[BlackBishop]|atks[BlackRook]|
          (atks[BlackQueen] & (_CENTER16|atks[WhiteKing]|atks[BlackKing])));
-    eval -= (2 * (BitCount(x) + BitCount(x & _CENTER4)));
+    eval -= (BitCount(x) + BitCount(x & _CENTER4) +
+             BitCount(x & (atks[WhiteKing]|atks[BlackKing])));
 
     // penalty for unprotected pawns, knights, and bishops
     if ((x = ((pc[WhitePawn]|MinorPieces<White>()) & ~atks[White]))) {
@@ -4039,6 +4041,12 @@ private:
           }
           return entry->score;
         }
+        if (entry->score > best) {
+          best = entry->score;
+          if (best > alpha) {
+            alpha = best;
+          }
+        }
         break;
       default:
         assert(false);
@@ -4501,8 +4509,7 @@ private:
     }
 
     // search remaining moves
-    const bool lmr_ok = (_lmr && !pvNode && !check && (depth > 2));
-    const bool weak = (standPat <= -parent->standPat);
+    const bool lmr_ok = (_lmr && (cutNode | !pvNode) && !check && (depth > 2));
     while ((move = GetNextMove<color, AllMoves>(depth))) {
       if (firstMove == (*move)) {
         assert(firstMove.IsValid());
@@ -4518,10 +4525,12 @@ private:
           !move->IsCapOrPromo() &&
           !child->InCheck() &&
           !IsKiller(*move) &&
-          (_hist[move->GetHistoryIndex()] < 0))
+          (_hist[move->GetHistoryIndex()] < 0) &&
+          (!pvNode || (moveIndex > 7)))
       {
         _stats.lmReductions++;
-        child->depthChange = -(1 + (weak || (-child->standPat <= standPat)));
+        child->depthChange = -(1 + (!pvNode &&
+                                    (-child->standPat <= -parent->standPat)));
       }
       else {
         child->depthChange = 0;

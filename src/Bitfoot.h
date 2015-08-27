@@ -1853,6 +1853,14 @@ private:
       eval += (6 * BitCount(x));
     }
 
+    // redundant knights are worth slightly less
+    if (MULTI_BIT(pc[WhiteKnight])) {
+      eval -= (16 * (BitCount(pc[WhiteKnight]) - 1));
+    }
+    if (MULTI_BIT(pc[BlackKnight])) {
+      eval += (16 * (BitCount(pc[BlackKnight]) - 1));
+    }
+
     // are there any pawns on the board?
     if (pc[WhitePawn] || pc[BlackPawn]) {
       assert(pinfo[White].count == BitCount(pc[WhitePawn]));
@@ -4384,7 +4392,7 @@ private:
       }
       else if (_nmr && cutNode && (depth > 2) && !parent->InCheck() &&
                (eval >= -parent->standPat) && !lastMove.IsCapOrPromo() &&
-               !(BIT(lastMove.GetTo()) & pinfo[!color].passed))
+               !(BIT(lastMove.GetTo()) & pc[(!color)|Pawn] & _RANK[color ? 6 : 1]))
       {
         nmrAttempt = 1;
         _stats.nmrCandidates++;
@@ -4394,7 +4402,7 @@ private:
           return beta;
         }
         if (eval >= standPat) {
-          // last move look pretty quiet and we're already expecting
+          // last move looks pretty quiet and we're already expecting
           // to be able to refute it (this is a cutNode) so we're betting we
           // can reduce depth and still refute it.  if not, we spend less time
           // determining that the last move is actually pretty good.

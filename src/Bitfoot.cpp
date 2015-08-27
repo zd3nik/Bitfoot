@@ -37,9 +37,9 @@ std::string         Bitfoot::_currmove;
 int64_t             Bitfoot::_hashSize = 0;
 Bitfoot             Bitfoot::_node[MaxPlies];
 std::set<uint64_t>  Bitfoot::_seen;
-TranspositionTable  Bitfoot::_tt;
 Stats               Bitfoot::_stats;
 Stats               Bitfoot::_totalStats;
+TranspositionTable  Bitfoot::_tt;
 
 //----------------------------------------------------------------------------
 EngineOption Bitfoot::_optHash("Hash", "1024", EngineOption::Spin, 0, 4096);
@@ -773,6 +773,7 @@ std::list<EngineOption> Bitfoot::GetOptions() const
   opts.push_back(_optLMR);
   opts.push_back(_optNMP);
   opts.push_back(_optNMR);
+  opts.push_back(_optOneReply);
   opts.push_back(_optRZR);
   opts.push_back(_optTempo);
   opts.push_back(_optTest);
@@ -805,15 +806,15 @@ bool Bitfoot::SetEngineOption(const std::string& optionName,
       return true;
     }
   }
-  if (!stricmp(optionName.c_str(), _optFutility.GetName().c_str())) {
-    if (_optFutility.SetValue(optionValue)) {
-      _futility = static_cast<int>(_optFutility.GetIntValue());
-      return true;
-    }
-  }
   if (!stricmp(optionName.c_str(), _optEXT.GetName().c_str())) {
     if (_optEXT.SetValue(optionValue)) {
       _ext = (_optEXT.GetValue() == _TRUE);
+      return true;
+    }
+  }
+  if (!stricmp(optionName.c_str(), _optFutility.GetName().c_str())) {
+    if (_optFutility.SetValue(optionValue)) {
+      _futility = static_cast<int>(_optFutility.GetIntValue());
       return true;
     }
   }

@@ -2,6 +2,7 @@ TEMPLATE = app
 CONFIG += console
 CONFIG -= app_bundle
 CONFIG -= qt
+DEFINES += _POPCNT
 
 INCLUDEPATH += .
 INCLUDEPATH += src

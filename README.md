@@ -10,7 +10,7 @@ I also show a simpler way of using my [Senjo UCI Adapter](https://github.com/zd3
 How it came to be
 -----------------
 
-This project was originally indented as a revamp of an older chess engine I wrote named `Hiroki`.  I started by cloning Clubfoot and replacing the board representation, move generation, and positional evaluation with Hiroki code.  Except I didn't copy the move generation code as-is, I simplified it so much it's really no longer the same move generator.  What made Hiroki unique was its move generator.  With that part missing this "revamped" version of Hiroki ceased to be Hiroki and became simply Clubfoot with bitboards.
+This project was originally intended as a revamp of an older chess engine I wrote named `Hiroki`.  I started by cloning Clubfoot and replacing the board representation, move generation, and positional evaluation with Hiroki code.  Except I didn't copy the move generation code as-is, I simplified it so much it's really no longer the same move generator.  What made Hiroki unique was its move generator.  With that part missing this "revamped" version of Hiroki ceased to be Hiroki and became simply Clubfoot with bitboards.
 
 Why is so much of the code in one header file?
 ----------------------------------------------

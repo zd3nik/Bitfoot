@@ -210,10 +210,18 @@ static inline std::string SqrStr(const int sqr)
 //----------------------------------------------------------------------------
 static inline int BitCount(uint64_t x)
 {
+#ifndef _POPCNT
+  x -= ((x >> 1) & 0x5555555555555555ULL);
+  x = (((x >> 2) & 0x3333333333333333ULL) + (x & 0x3333333333333333ULL));
+  x = (((x >> 4) + x) & 0x0F0F0F0F0F0F0F0FULL);
+  x *= 0x0101010101010101ULL;
+  return static_cast<uint32_t>(x >> 56);
+#else
 #ifdef _WIN32
   return static_cast<int>(_mm_popcnt_u64(x));
 #else
   return __builtin_popcountll(x);
+#endif
 #endif
 }
 

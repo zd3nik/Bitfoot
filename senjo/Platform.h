@@ -36,7 +36,7 @@
 #pragma warning(disable:4996)
 #define PRId64 "lld"
 #define PRIu64 "llu"
-#define snprintf _snprintf
+//#define snprintf _snprintf
 #else // not WIN32
 #define __STDC_LIMIT_MACROS
 #define __STDC_FORMAT_MACROS

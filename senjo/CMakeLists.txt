@@ -26,7 +26,7 @@ set(OBJ_SRC
 
 include_directories(.)
 add_library(${PROJECT_NAME} STATIC ${OBJ_HDR} ${OBJ_SRC})
-if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+if (CMAKE_COMPILER_IS_GNUCXX)
     target_link_libraries(${PROJECT_NAME} pthread)
 endif()
 

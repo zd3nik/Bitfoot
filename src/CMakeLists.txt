@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 2.8)
-include("${CMAKE_SOURCE_DIR}/init.cmake")
-project(bitfoot CXX)
+project(bitfoot_lib CXX)
+
+add_subdirectory(senjo)
 
 set(OBJ_HDR
     Bitfoot.h
@@ -16,13 +16,7 @@ set(OBJ_SRC
     Stats.cpp
 )
 
-include_directories(. ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/senjo)
-add_executable(${PROJECT_NAME} ${OBJ_HDR} ${OBJ_SRC} main.cpp)
+include_directories(.)
+add_library(${PROJECT_NAME} STATIC ${OBJ_HDR} ${OBJ_SRC})
 target_link_libraries(${PROJECT_NAME} senjo)
 
-add_custom_command(
-    TARGET ${PROJECT_NAME}
-    PRE_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/epd" "${CMAKE_BINARY_DIR}/epd"
-    COMMENT "Copying EPD test files"
-)

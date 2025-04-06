@@ -5,7 +5,7 @@
 #ifndef BITFOOT_STATS_H
 #define BITFOOT_STATS_H
 
-#include "Platform.h"
+#include "senjo/Platform.h"
 
 namespace bitfoot
 {
